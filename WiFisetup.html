@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang='en'>
+
+<head>
+    <meta charset='utf-8'>
+    <meta name='viewport' content='width=device-width, initial-scale=1, user-scalable=no' />
+    <meta name='theme-color' content='#000' />
+    <style>
+        h1 {
+            text-align: center;
+        }
+
+        body {
+            background: rgb(0, 0, 0);
+            font: 14px sans-serif;
+            color: rgb(153, 153, 204);
+            position: relative;
+        }
+
+        .container {
+            min-width: 280px;
+            max-width: 425px;
+            height: 100%;
+            width: 100%;
+            margin: 0 auto;
+            padding: 0 15px;
+            z-index: 2;
+            border: 1px solid #000000;
+            position: relative;
+        }
+
+        input {
+            height: 100%;
+            width: 100%;
+            padding: 4px;
+            margin: 4px 0 10px;
+            background: 0;
+            outline: 0;
+            border: 1px solid rgb(245, 96, 96);
+            color: #fff;
+        }
+
+        input:focus {
+            border-color: #ee990f;
+        }
+
+        .btn {
+            width: 45%;
+            margin: 10px;
+            padding: 5px 14px 8px;
+            display: block;
+            float: right;
+            background: #f18c07;
+            border-radius: 4px;
+            border: 0;
+            font-size: 16px;
+            color: #fff;
+            text-align: center;
+        }
+
+
+        .btn:active,
+        .btn:focus,
+        .btn:hover {
+            background: #d3d3d3;
+        }
+
+        .container .access_points {
+            display: none;
+            padding: 5px;
+        }
+
+        .ap_frame {
+            height: 100%;
+            width: 100%;
+            display: flex;
+        }
+
+        .ap_rssi {
+            left: 0;
+            right: 0;
+            width: 48px;
+            height: 48px;
+            display: flex;
+        }
+
+        .lvl {
+            padding: 2px;
+            border: 2px solid transparent;
+            border-radius: 48px;
+            animation: left 2s linear infinite;
+        }
+
+        @keyframes left {
+            0% {
+                border-top: 2px solid rgba(0, 0, 0, 0.1);
+            }
+            100% {
+                border-top: 2px solid #00b7f2;
+            }
+        }
+
+        .modal {
+            position: fixed;
+            top: 0px;
+            right: 0px;
+            bottom: 0px;
+            left: 0px;
+            z-index: 1072;
+            display: none;
+            overflow: hidden;
+            outline: 0;
+            min-height: 1px;
+            padding-right: 15px;
+            padding-left: 15px;
+            margin: .5rem;
+            pointer-events: none;
+            align-items: center;
+            justify-content: center;
+
+            /* max-width: 500px; */
+        }
+
+        .fade {
+            opacity: 0;
+            transition: opacity .15s linear;
+        }
+
+        .modal-backdrop {
+            position: fixed;
+            top: 0px;
+            right: 0px;
+            bottom: 0px;
+            left: 0px;
+            background-color: #000;
+            z-index: 900;
+            opacity: 0.5;
+            transition: opacity .15s linear;
+        }
+
+        .fade.show {
+            opacity: 1;
+            display: block;
+            transform: translate(0px, 0px);
+            padding-right: 16px;
+        }
+
+        .fade.hide {
+            display: none;
+        }
+
+        [tabindex='-1']:focus {
+            outline: 0 !important;
+        }
+
+        .modal-body {
+            position: relative;
+            flex: 1 1 auto;
+            padding: 50px;
+            display: flex;
+            margin: 0 auto;
+            width: 200px;
+        }
+    </style>
+    <script language='javascript'> 
+        function toggle(elementId) {
+            var ele = document.getElementById(elementId);
+            if (ele.style.display == 'block') {
+                ele.style.display = 'none';
+            }
+            else {
+                ele.style.display = 'block';
+            }
+        }
+
+        function drawWifiIcon(parent, level) {
+            parent.innerHTML = "";
+            for (i = 0; i < level; i++) {
+                var iDivC = document.createElement('div');
+                iDivC.className = 'lvl';
+                iDivC.style.animationDelay = (1 - 0.1 * i) + 's';
+                parent.appendChild(iDivC);
+                parent = iDivC;
+            }
+        }
+
+        function createAccessPoint(accessPoint) {
+            var element = document.createElement('li');
+            element.dataset.secure = accessPoint.auth;
+            element.className = 'ap';
+            element.id = accessPoint.ssid;
+            element.addEventListener('click', function () {
+                document.getElementById('ssid').value = this.id;
+                document.getElementById('ssid').dataset.secure = this.dataset.secure;
+                javascript: toggle('results');
+            });
+            var ap = document.createElement('div');
+            ap.className = 'ap_frame';
+            element.appendChild(ap);
+
+            if (accessPoint.auth == '1') {
+                var iSpn = document.createElement('span');
+                iSpn.className = 'ap_auth';
+                iSpn.innerText = '🔒';
+                ap.appendChild(iSpn);
+            }
+            var iSpn = document.createElement('span');
+            iSpn.className = 'ap_ssid';
+            iSpn.innerText = accessPoint.ssid;
+            ap.appendChild(iSpn);
+            var iDiv = document.createElement('div');
+            iDiv.className = 'ap_rssi';
+            ap.appendChild(iDiv);
+            var rssi = (100 + accessPoint.rssi) / 10;
+            drawWifiIcon(iDiv, rssi > 5 ? 5 : rssi);
+            return element;
+        }
+
+        function scanWiFi() {
+            showModal();
+            document.getElementById('status').innerText = "Scanning..";
+            var timer = setInterval(function () {
+                var oReq = new XMLHttpRequest();
+                document.getElementById('ssid').disabled = true;
+                oReq.onreadystatechange = function () {
+                    console.log(this.readyState + ":" + this.status);
+                    if (4 == this.readyState && 200 == this.status) {
+                        var response = this.responseText;
+                        var ap_list = JSON.parse(response);
+                        if (ap_list.accessPoints.length != 0) {
+                            document.getElementById('ssid').disabled = false;
+                            toggle('results');
+                            results = document.getElementById('results');
+                            results.innerHTML = "";
+                            ap_list.accessPoints.forEach(ap => {
+                                results.appendChild(createAccessPoint(ap));
+                            });
+                            document.getElementById('status').innerText = "Not Connected";
+                            hideModal();
+                            clearInterval(timer);
+                        }
+                    }
+                };
+                oReq.open('GET', '/getApList', true);
+                //oReq.responseType = 'json';
+                oReq.send();
+            }, 2000);
+        }
+
+        function showModal() {
+            if (document.getElementById('scanning').classList.contains('show')) return;
+            drawWifiIcon(document.getElementsByClassName('modal-body')[0], 20);
+            document.getElementById('scanning').classList.remove('hide');
+            document.getElementById('scanning').classList.add('show');
+            var modalBackdrop = document.createElement('div');
+            modalBackdrop.className = 'modal-backdrop';
+            document.body.appendChild(modalBackdrop);
+        }
+
+        function hideModal() {
+            document.getElementById('scanning').classList.remove('show');
+            document.getElementById('scanning').classList.add('hide');
+            [].forEach.call(document.getElementsByClassName('modal-backdrop'), function (e) { e.parentNode.removeChild(e); });
+        }
+
+        function isEmpty(str) {
+            return !str.replace(/\s+/, '').length;
+        }
+
+        function saveAccessPoint() {
+            var oReq = new XMLHttpRequest();
+            oReq.onreadystatechange = function () {
+                if (4 == this.readyState && 204 == this.status) {
+                    var oReq1 = new XMLHttpRequest();
+                    oReq1.onreadystatechange = function () {
+                        if (4 == this.readyState && 204 == this.status) {
+                            document.getElementById('status').innerText = "Please connect to WiFI SSID: " + document.body.dataset.ssid;
+                            hideModal();
+                        }
+                    };
+                    oReq1.open('GET', '/exit', true);
+                    oReq1.send();
+                }
+            };
+            document.getElementById('status').innerText = "Saving..";
+            showModal();
+            oReq.open('GET', '/save', true);
+            oReq.send();
+        }
+
+        function connectAccessPoint() {
+            var ssid = document.getElementById('ssid').value;
+            if (isEmpty(ssid))
+                return;
+            var secure = document.getElementById('ssid').dataset.secure == '1';
+            //if one of the scanned AP is selected, check if password is mandatory
+            var pwd = document.getElementById('pwd').value;
+            if (secure && isEmpty(pwd)) {
+                alert('Network needs Authentication!!'); return;
+            }
+            var oReq = new XMLHttpRequest;
+            oReq.open("POST", '/connect');
+            oReq.setRequestHeader("Content-type", "application/x-www-form-urlencoded");
+
+            oReq.onreadystatechange = function () {
+                if (4 == this.readyState && 200 == this.status) {
+                    if (this.responseText == '1') {
+                        setTimeout(updateStatus(), 1000);
+                    }
+                }
+            };
+            document.getElementById('status').innerText = "Connecting..";
+            showModal();
+            oReq.send('ssid=' + ssid + '&pwd=' + pwd);
+        }
+
+        function updateStatus(single) {
+            var timer = setInterval(function () {
+                var oReq = new XMLHttpRequest();
+                oReq.onreadystatechange = function () {
+                    if (4 == this.readyState && 200 == this.status) {
+                        if (single == true) { clearInterval(timer); }
+                        var response = JSON.parse(this.responseText);
+                        if (response.status == '3') {
+                            document.getElementById('status').innerText = "Connected, local IP address" + response.IP;
+                            document.body.dataset.ip = response.IP;
+                            document.body.dataset.ssid = response.AP;
+                            hideModal();
+                            document.getElementById('save').style.display = 'block';
+                            document.getElementById('connect').style.display = 'none';
+                            clearInterval(timer);
+                        } else if (response.status == '4') {
+                            alert('Failed to connect. Try again');
+                            document.getElementById('status').innerText = "Failed to Connect";
+                            hideModal();
+                            clearInterval(timer);
+                        } else if (response.status == '2') {
+                            document.getElementById('status').innerText = "Connecting..";
+                        }
+                        else {
+                            document.getElementById('status').innerText = "Not Configured";
+                        }
+                    }
+                };
+                oReq.open('GET', '/getWifiStatus', true);
+                oReq.send();
+            }, 1000);
+
+        }
+    </script>
+    <title>WiFi Setup Wizard</title>
+</head>
+
+<body onload="updateStatus(true)">
+    <h1>Esp32 WiFi Setup Wizard</h1>
+    <div id='main' class='container'>
+        <form>
+            <label>SSID</label>
+            <input id='ssid' name='ssid' maxlength=50 placeholder='access point' onclick='javascript:toggle("results");' />
+            <ul class='access_points' id='results'>
+            </ul>
+            <label>Password</label>
+            <input type='password' id='pwd' name='pwd' maxlength=50 />
+        </form>
+        <div style="overflow: hidden;">
+            <button class='btn' onclick='javascript:scanWiFi()'>Scan for Networks</button>
+            <button class='btn' id='connect' onclick='javascript:connectAccessPoint()'>Connect</button>
+            <button class='btn' id='save' style="display: none;" onclick='javascript:saveAccessPoint()'>Save</button>
+        </div>
+        <label>Status: </label>
+        <label id='status'></label>
+        <div tabindex='-1' class='modal fade' id='scanning'>
+            <div class='modal-body'></div>
+        </div>
+    </div>
+</body>
+
+</html>

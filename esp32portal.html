@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang='en'>
+
+<head>
+    <meta charset='utf-8'>
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no, user-scalable=no" />
+    <meta name='theme-color' content='#000' />
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/css/bootstrap.min.css" integrity="sha384-MCw98/SFnGE8fJT3GXwEOngsV7Zt27NXFoaoApmYm81iuXoPkFOJwJ8ERdknLPMO"
+        crossorigin="anonymous">
+    <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.6.1/css/all.css" integrity="sha384-gfdkjb5BdAXd+lj+gudLWI+BXq4IuLW5IT+brZEZsLFm++aCMlF1V92rMkPaX4PP"
+        crossorigin="anonymous">
+    <script src="https://code.jquery.com/jquery-3.3.1.min.js" integrity="sha384-tsQFqpEReu7ZLhBV2VZlAu7zcOV+rXbYlF2cqB8txI/8aZajjp4Bqd+V6D5IgvKT"
+        crossorigin="anonymous"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/js/bootstrap.min.js" integrity="sha384-ChfqqxuZUCnJSK3+MXmPNIyE6ZbWh2IMqE241rYiqJxyMiZ6OW/JmZQ5stwEULTy"
+        crossorigin="anonymous"></script>
+    <style>
+        h1 {
+            text-align: center;
+        }
+
+        html {
+            position: relative;
+
+            background-color: rgb(39, 38, 38);
+            font: 14px sans-serif;
+            color: rgb(153, 153, 204);
+            height: 100%;
+            min-height: 100%;
+        }
+
+        body {
+            margin-bottom: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding-top: 40px;
+            padding-bottom: 40px;
+            background-color: rgb(39, 38, 38);
+            color: #fff;
+            text-shadow: 0 .05rem .1rem rgba(0, 0, 0, .5);
+            box-shadow: inset 0 0 5rem rgba(0, 0, 0, .5);
+            height: 100%;
+            min-height: 100%;
+        }
+
+        .footer {
+            position: absolute;
+            bottom: 0;
+            width: 100%;
+            height: 60px;
+            line-height: 60px;
+        }
+
+        .link {
+            cursor: pointer;
+            text-decoration: underline;
+        }
+
+        .link:hover {
+            text-decoration: none;
+            text-shadow: 1px 1px 1px #555;
+            background: #e96464;
+        }
+
+        .narrow {
+            width: 50px;
+        }
+
+        .highlight-unsaved {
+            border-color: rgb(209, 48, 48)
+        }
+    </style>
+    <script language='javascript'> 
+        $(document).ready(function () {
+            setTimeout(function () {
+                $.get("/getWifiStatus", function (response) {
+                    if (response.status == '3') {
+                        $('#ap').text(response.AP);
+                        $('#ip').text(response.IP);
+                    }
+                });
+                $.get("/getPidParam", function (response) {
+                    $('#p').val(response.Proportional);
+                    $('#i').val(response.Integral);
+                    $('#d').val(response.Derivitive);
+                });
+            }, 500);
+            mainTimer = setInterval(function () {
+                $.ajax({
+                    method: "GET",
+                    url: '/getHeaterStatus',
+                    cache: "false"
+                }).done(function (response) {
+                    document.body.dataset.heater = response.Heater;
+                    $('#current_temp').text(response.Current + "°C");
+                    if (response.Heater) {
+                        if (!$('#sp').is(":focus") && $('#sp').val() != response.Target)
+                            $('#sp').val(response.Target);
+                        $ds = (response.DutyCycle * 100);
+                        if ($ds > 90)
+                            $('#progressBar').removeClass('bg-info').removeClass('bg-warning').addClass('bg-danger')
+                        else if ($ds > 50)
+                            $('#progressBar').removeClass('bg-danger').removeClass('bg-info').addClass('bg-warning')
+                        else
+                            $('#progressBar').removeClass('bg-danger').removeClass('bg-warning').addClass('bg-info')
+                        $ds = $ds.toFixed(0);
+                        $('#progressBar').css('width', $ds + '%');
+                        $('#progressBar').html($ds + '%');
+                        $(".powered.on").show();
+                        $(".powered.off").hide();
+                    } else {
+                        $(".powered.on").hide();
+                        $(".powered.off").show();
+                    }
+                });
+            }, 1000);
+
+            $(".toggle").on("click", function () {
+                $.post("/heaterPower", { turnOn: (document.body.dataset.heater == "true" ? 0 : 1) });
+            });
+            $("#setTemp").click(function () {
+                $.post("/setHeaterTemperature", { temp: $('#sp').val() });
+            });
+            $("#setParam").click(function () {
+                $.post("/setPidParam", { p: $('#p').val(), i: $('#i').val(), d: $('#d').val() }, function (response) {
+                    if (response == 'Ok') {
+                        $(".param").removeClass('highlight-unsaved');
+                    }
+                });
+            });
+            $(".param").on("change", function () {
+                $(this).addClass('highlight-unsaved');
+            });
+        });
+
+    </script>
+    <title>Cetus Bed Heater</title>
+</head>
+
+<body class="text-center">
+    <main role="main" class="container">
+        <h1 class="mt-5">Cetus 3d printer bed heater</h1>
+        <div class="container">
+            <div class="form-row align-items-center">
+                <div class="col-auto">
+                    <label class="col-form-label">Heater</label>
+                </div>
+                <div class="col-auto powered">
+                    <div class="powered off toggle collapse">
+                        <span class="link">
+                            <strong>Turn ON</strong>
+                            <i class="fas fa-power-off"></i>
+                        </span>
+                    </div>
+                    <div class="powered on toggle ">
+                        <div class="input-group m-1 pb-1">
+                            <span class="link">
+                                <strong>Turn OFF</strong>
+                                <i class="fas fa-power-off"></i>
+                            </span>
+                            <div style="min-width: 66px;" class="mx-5">
+                                <div class="progress">
+                                    <div id="progressBar" class="progress-bar progress-bar-striped" style="color:rgba(26, 12, 12, 0.788);width:0%">0%</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="form-row align-items-center">
+                <div class="col-auto">
+                    <label class="col-form-label">Target bed Temperature</label>
+                </div>
+                <div class="col-auto">
+                    <div class="input-group m-2">
+                        <input type="number" id='sp' class="narrow form-control">
+                        <div class="input-group-append">
+                            <button type="button" class='btn  btn-outline-secondary' id="setTemp">Set</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="form-row align-items-center">
+                <div class="col-auto">
+                    <label class="col-form-label">Current bed temperature</label>
+                </div>
+                <div class="col-auto">
+                    <span id='current_temp' />
+                    <i class="fas fa-fire"></i>
+                </div>
+            </div>
+            <div class="form-row align-items-center col-6">
+                <div class="card-title">
+                    <a data-toggle="collapse" href="#tuningParams" class="card-title mx-3">
+                        Tuning Params
+                    </a>
+                    <div id="tuningParams" class="form-group collapse">
+                        <div class="input-group">
+                            <div class="input-group-prepend">
+                                <label class="input-group-text">Proportional</label>
+                            </div>
+                            <input id='p' type="number" step='0.01' class="form-control param" maxlength=2 />
+                        </div>
+                        <div class="input-group">
+                            <div class="input-group-prepend">
+                                <label class="input-group-text">Integral</label>
+                            </div>
+                            <input id='i' type="number" step='0.01' class="form-control param" maxlength=2 />
+                        </div>
+                        <div class="input-group">
+                            <div class="input-group-prepend">
+                                <label class="input-group-text">Derivative</label>
+                            </div>
+                            <input id='d' type="number" step='0.01' class="form-control param" maxlength=2 />
+                        </div>
+                        <div class="input-group">
+                            <button type="button" class='btn  btn-outline-secondary' id="setParam">Save</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        </div>
+        </form>
+        </div>
+    </main>
+    <footer class="footer">
+        <div class="container">
+            <span class="text-muted">Connected to</span>
+            <span class="text-muted" id='ap'></span>
+            <span class="text-muted"> IP Address </span>
+            <span class="text-muted" id='ip'></span>
+        </div>
+    </footer>
+</body>
+
+</html>
