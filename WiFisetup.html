@@ -40,6 +40,12 @@
             color: #fff;
         }
 
+        ul {
+            list-style-type: none;
+            margin: 0;
+            padding: 0;
+        }
+
         input:focus {
             border-color: #ee990f;
         }
@@ -325,6 +331,8 @@
                             document.getElementById('status').innerText = "Connected, local IP address" + response.IP;
                             document.body.dataset.ip = response.IP;
                             document.body.dataset.ssid = response.AP;
+                            document.getElementById('ssid').value = response.AP;
+                            document.getElementById('pwd').setAttribute("disabled","disabled");
                             hideModal();
                             document.getElementById('save').style.display = 'block';
                             document.getElementById('connect').style.display = 'none';

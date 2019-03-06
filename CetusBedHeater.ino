@@ -6,11 +6,48 @@
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
 #include <ESPmDNS.h>
+#include <esp_system.h>
+#include <esp_spi_flash.h>
 #include <rom/rtc.h>
+#include <Update.h>
+#include <StreamString.h>
+#include "soc/efuse_reg.h"
+#include <driver/gpio.h>
 
 #include "web_pages.h"
-#include "DS18B20.h"
-#include "PidPwm.h"
+#include "src/DS18B20/DS18B20.h"
+#include "src/PIDPwm/PidPwm.h"
+
+class ChipInfo
+{
+  public:
+    uint8_t reason;
+    const char *sdkVersion;
+    uint8_t chipVersion;
+    uint8_t coreCount;
+    uint8_t featureBT;
+    uint8_t featureBLE;
+    uint8_t featureWiFi;
+    bool internalFlash;
+    uint8_t flashSize;
+
+    ChipInfo()
+    {
+        esp_chip_info_t chip_info;
+        esp_chip_info(&chip_info);
+        reason = rtc_get_reset_reason(0);
+        sdkVersion = ESP.getSdkVersion();
+        chipVersion = chip_info.revision;
+        //chipVersion = REG_READ(EFUSE_BLK0_RDATA3_REG) >> 15;
+        coreCount = chip_info.cores;
+        featureBT = (chip_info.features & CHIP_FEATURE_BT) ? 1 : 0;
+        featureBLE = (chip_info.features & CHIP_FEATURE_BLE) ? 1 : 0;
+        featureWiFi = 1;
+        internalFlash = (chip_info.features & CHIP_FEATURE_EMB_FLASH) ? 1 : 0;
+        flashSize = spi_flash_get_chip_size() / (1024 * 1024);
+    }
+};
+ChipInfo chipInfo;
 
 class WiFiConfig
 {
@@ -23,8 +60,12 @@ volatile RTC_NOINIT_ATTR bool resetConfig;
 
 WiFiConfig config;
 const char *pref_namespace = "WiFiCred";
-const char *rootUrl = "http://esp32.local/";
-const char *hostName = "esp32";
+const char *rootUrl = "cetus3d.local";
+const char *hostName = "cetus3d";
+const char *http_username = "cetus";
+const char *http_password = "CetusAdmin";
+float targetTemp = 60;
+
 TimerHandle_t fadeLedTimer;
 void IRAM_ATTR resetModule();
 
@@ -32,6 +73,7 @@ void IRAM_ATTR resetModule();
 PidPwm *pid;
 DS18B20 *ds;
 
+unsigned long heaterStartTs;
 /////// Handle long press of the button to reset WiFi credentials
 const uint8_t resetBtn = 0; //GPIO0, do.it board has a button attached
 volatile long btnPressed;
@@ -103,6 +145,8 @@ int ScanWiFi(AsyncResponseStream *response)
             WiFi.scanNetworks(true);
             Serial.println("Refresh networks");
         }
+        //assume previous attempt failed
+        wifiStatus = WifiStatus::ConnectFailed;
     }
     return numberOfNetworks;
 }
@@ -124,7 +168,7 @@ bool SetupAccessPoint()
     });
 
     server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
-        if (request->host() != "esp32.local")
+        if (request->host() != rootUrl)
         {
             request->redirect(rootUrl);
             return;
@@ -132,13 +176,8 @@ bool SetupAccessPoint()
         serveStatic(request, WiFisetup_html, sizeof(WiFisetup_html));
     });
 
-    server.on("/bootMsg", HTTP_GET, [](AsyncWebServerRequest *request) {
-        AsyncResponseStream *response = request->beginResponseStream("application/json");
-        //RESET_REASON reason = rtc_get_reset_reason(0);
-        // Serial.begin(115200);
-        // Serial.printf("Starting Esp32 with IDF %s reset reason %d\n", ESP.getSdkVersion(), reason);
-        response->printf("{\"boot_reason\":%d}", rtc_get_reset_reason(0));
-        request->send(response);
+    server.on("/getChipInfo", HTTP_GET, [](AsyncWebServerRequest *request) {
+        getChipInfo(request);
     });
 
     server.on("/getApList", HTTP_GET, [](AsyncWebServerRequest *request) {
@@ -192,12 +231,26 @@ bool SetupAccessPoint()
             initWifiConnection();
         }
     }
+    if (wifiStatus == WifiStatus::Connected)
+    {
+        delay(2000);
+        WiFi.disconnect(true);
+        WiFi.mode(WIFI_STA);
+        Serial.println("WiFi setup complete, rebooting..");
+        delay(1000);
+        ESP.restart();
+    }
 }
 
 void onNotFound(AsyncWebServerRequest *request)
 {
-    if (request->host() != "esp32.local")
-        request->redirect(rootUrl);
+    StreamString s;
+    Serial.printf("Host: %s", request->host().c_str());
+    if (request->host() != rootUrl)
+    {
+        s.printf("http://%s/", rootUrl);
+        request->redirect(s);
+    }
     else
         request->send(404); //Sends 404 File Not Found
 }
@@ -224,6 +277,17 @@ void getWifiStatus(AsyncWebServerRequest *request)
     request->send(response);
 }
 
+void getChipInfo(AsyncWebServerRequest *request)
+{
+    AsyncResponseStream *response = request->beginResponseStream("application/json");
+    response->addHeader("Cache-Control", "max-age=86400");
+    response->printf("{\"reason\":%d,\"sdkVersion\":\"%s\",\"chipVersion\":%d,\"coreCount\":%d,\"featureBT\":%d,\"featureBLE\":%d,\"featureWiFi\":%d,\"internalFlash\":%d,\"flashSize\":%d}",
+                     chipInfo.reason, chipInfo.sdkVersion, chipInfo.chipVersion,
+                     chipInfo.coreCount, chipInfo.featureBT, chipInfo.featureBLE,
+                     chipInfo.featureWiFi, chipInfo.internalFlash, chipInfo.flashSize);
+    request->send(response);
+}
+
 void getHeaterStatus(AsyncWebServerRequest *request)
 {
     AsyncResponseStream *response = request->beginResponseStream("application/json");
@@ -231,8 +295,8 @@ void getHeaterStatus(AsyncWebServerRequest *request)
     response->addHeader("Expires", "-1");
     if (pid->isRunning())
     {
-        response->printf("{\"Heater\":true,\"Target\":%.3f,\"Current\":%.3f,\"DutyCycle\":%.3f}",
-                         pid->getTarget(), pid->getCurrent(), pid->getOutputDS());
+        response->printf("{\"Heater\":true,\"Target\":%.3f,\"Current\":%.3f,\"DutyCycle\":%.3f,\"RunTime\":%lu}",
+                         pid->getTarget(), pid->getCurrent(), pid->getOutputDS(), (millis() - heaterStartTs) / 1000);
     }
     else
     {
@@ -248,9 +312,11 @@ void setHeaterTemperature(AsyncWebServerRequest *request)
     response->addHeader("Expires", "-1");
     if (request->hasParam("temp", true))
     {
-        float f = atof(request->getParam("temp", true)->value().c_str());
-        pid->setTarget(f);
-        response->print("OK");
+        targetTemp = atof(request->getParam("temp", true)->value().c_str());
+        if (pid->setTarget(targetTemp))
+            response->print("OK");
+        else
+            response->print("Invalid");
     }
     else
     {
@@ -300,14 +366,19 @@ void heaterPower(AsyncWebServerRequest *request)
         Serial.print(request->getParam("turnOn", true)->value());
         if (request->getParam("turnOn", true)->value() == "1")
         {
-            Serial.println("Starting heater");
-            pid->begin();
-            Serial.println("Started heater");
+            if (pid->begin())
+            {
+                heaterStartTs = millis();
+                response->print("OK");
+            }
+            else
+                response->print("Invalid");
         }
         else
         {
             Serial.println("Shutdown heater");
             pid->shutdown();
+            heaterStartTs = 0;
         }
         response->print("OK");
     }
@@ -318,6 +389,34 @@ void heaterPower(AsyncWebServerRequest *request)
     request->send(response);
 }
 
+void onUpload(AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final)
+{
+    if (!index)
+    {
+        Serial.printf("UploadStart: %s\n", filename.c_str());
+        if (!Update.begin(UPDATE_SIZE_UNKNOWN))
+        { //start with max available size
+            Update.printError(Serial);
+        }
+    }
+    /* flashing firmware to ESP*/
+    if (Update.write(data, len) != len)
+    {
+        Update.printError(Serial);
+    }
+    if (final)
+    {
+        if (Update.end(true))
+        { //true to set the size to the current progress
+            Serial.printf("Update Success: %u\nRebooting...\n", index + len);
+        }
+        else
+        {
+            Update.printError(Serial);
+        }
+    }
+}
+
 bool startMainserver()
 {
     if (!WiFi.isConnected())
@@ -326,6 +425,25 @@ bool startMainserver()
     server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
         serveStatic(request, esp32portal_html, sizeof(esp32portal_html));
     });
+
+    server.on("/config", HTTP_GET, [](AsyncWebServerRequest *request) {
+        if (!request->authenticate(http_username, http_password))
+            return request->requestAuthentication();
+        serveStatic(request, config_html, sizeof(config_html));
+    });
+
+    server.on("/upload", HTTP_POST, [](AsyncWebServerRequest *request) {
+        StreamString str;
+        Update.printError(str);
+        AsyncResponseStream *response = request->beginResponseStream("application/json");
+        response->addHeader("Connection", "close");
+        response->printf("{\"UpdateStatus\":%d,\"Message\":\"%s\"}",
+                         !Update.hasError(), Update.hasError() ? str.c_str() : "Success");
+        request->send(response);
+        delay(1000);
+        ESP.restart();
+    },
+              onUpload);
 
     server.on("/getWifiStatus", HTTP_GET, [](AsyncWebServerRequest *request) {
         getWifiStatus(request);
@@ -351,14 +469,20 @@ bool startMainserver()
         heaterPower(request);
     });
 
+    server.on("/getChipInfo", HTTP_GET, [](AsyncWebServerRequest *request) {
+        getChipInfo(request);
+    });
+
     server.onNotFound([](AsyncWebServerRequest *request) {
         onNotFound(request);
     });
 
     MDNS.begin(hostName);
+    DefaultHeaders::Instance().addHeader("server", "ESP32");
     server.begin();
     // Add service to MDNS-SD
-    MDNS.addService("_http", "_tcp", 80);
+    //MDNS.addService("_http", "_tcp", 80);
+    MDNS.addService("http", "tcp", 80);
 }
 
 bool initWifiConnection()
@@ -373,7 +497,6 @@ bool initWifiConnection()
     WiFi.persistent(false); //Avoid to store Wifi configuration in Flash
     WiFi.onEvent(WiFiEvent);
     WiFi.begin(config.ssid.c_str(), config.password.c_str());
-    WiFi.setHostname(hostName);
 }
 
 void connectionFailed()
@@ -387,16 +510,9 @@ void wifiConnected()
 {
     wifiStatus = WifiStatus::Connected;
     if (!config.valid)
-    {
         config.valid = true;
-        delay(5000);
-        WiFi.disconnect(true);
-        WiFi.mode(WIFI_STA);
-        Serial.println("WiFi setup complete, rebooting..");
-        delay(1000);
-        ESP.restart();
-    }
-    startMainserver();
+    else
+        startMainserver();
     xTimerStop(fadeLedTimer, 0);
     ledcWrite(1, 16000);
 }
@@ -418,14 +534,19 @@ void IRAM_ATTR resetModule()
 
 void WiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info)
 {
-    // Serial.printf("[WiFi-event] event: %d timestamp:%d\n", event, millis());
+    Serial.printf("[WiFi-event] event: %d timestamp:%d\n", event, millis());
     switch (event)
     {
     case SYSTEM_EVENT_STA_GOT_IP:
-        // Serial.printf("WiFi connected IP address: %s duration %d\n", WiFi.localIP().toString().c_str(), millis());
+        Serial.printf("WiFi connected IP address: %s duration %d\n", WiFi.localIP().toString().c_str(), millis());
         wifiConnected();
         break;
+    case SYSTEM_EVENT_STA_START:
+        //set sta hostname here
+        WiFi.setHostname(hostName);
+        break;
     case SYSTEM_EVENT_STA_LOST_IP:
+        Serial.printf("WiFi lost IP");
         wifiStatus = WifiStatus::NotConnected;
         break;
     case SYSTEM_EVENT_STA_DISCONNECTED:
@@ -434,6 +555,7 @@ void WiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info)
         {
         case WIFI_REASON_AUTH_FAIL:
         case WIFI_REASON_802_1X_AUTH_FAILED:
+            Serial.printf("WiFi Auth failed");
             connectionFailed();
             break;
         }
@@ -452,10 +574,9 @@ void fadeLedCallback(TimerHandle_t xTimer)
 //////////////////////////////////////////////////////////////////////////////////////////////
 void setup()
 {
-    RESET_REASON reason = rtc_get_reset_reason(0);
     Serial.begin(115200);
-    // Serial.printf("Starting Esp32 with IDF %s reset reason %d\n", ESP.getSdkVersion(), reason);
-    if (reason == POWERON_RESET || reason == RTCWDT_RTC_RESET)
+
+    if (chipInfo.reason == POWERON_RESET || chipInfo.reason == RTCWDT_RTC_RESET)
         resetConfig = false;
 
     if (!resetConfig)
@@ -465,9 +586,6 @@ void setup()
     pinMode(LED_BUILTIN, OUTPUT); // set the LED pin mode
     ledcAttachPin(LED_BUILTIN, 1);
     ledcSetup(1, 12000, 16);
-
-    pinMode(13, OUTPUT); // powerup mosfet breakout
-    digitalWrite(13, HIGH);
 
     fadeLedTimer = xTimerCreate(
         "ledFadeTimer",
@@ -490,18 +608,53 @@ void setup()
         WiFi.mode(WIFI_STA);
         initWifiConnection();
     }
-    ds = new DS18B20(15, DS18B20::Resolution::bit_11);
-    PidPwm::PidParam param = {10, 1, 0};
-    pid = new PidPwm(12, 2, 24000, 10, 35, param, [&]() {
-        return ds->getTemperature();
+    // powerup sensor breakout
+    //    pinMode(14, PULLUP);
+    //    digitalWrite(14, HIGH);
+
+    // gpio_pad_select_gpio(GPIO_NUM_14);
+    // gpio_set_direction(GPIO_NUM_14, gpio_mode_t::GPIO_MODE_OUTPUT);
+    // gpio_pullup_en(GPIO_NUM_14);
+
+    // powerup mosfet breakout
+    pinMode(25, PULLUP);
+    digitalWrite(25, HIGH);
+    pinMode(27, OUTPUT);
+    digitalWrite(27, LOW);
+    delay(500);
+
+    ds = new DS18B20(14, 12, DS18B20::Resolution::bit_10);
+    PidPwm::PidParam param = {2, 5, 0.5};
+    pid = new PidPwm(26, 2, 24000, 10, 100, param, [&]() -> double {
+        //limit the bed to 100°C, if its more than that report NAN, PidPwm should cut off output bringing down the temp
+        double t = 0;
+        for (int i = 0; i < 5; i++)
+        {
+            double t1 = ds->getTemperature();
+            if (!isnan(t1))
+            {
+                t += t1;
+                t /= 2.0;
+            }
+            delay(50);
+        }
+
+        if (t > 100)
+            return NAN;
+        //hard off if we are already at the set Target
+        if (isnan(targetTemp) || t > targetTemp)
+            return NAN;
+        return t;
     });
+    pid->setTarget(targetTemp);
+    pid->setComputeInterval(2000);
 }
 
 void loop()
 {
     yield();
     delay(1000);
-    Serial.printf("%.3f\t%.3f\n", pid->getCurrent(),pid->getOutputDS()*100);
+    //Serial.printf("%.3f\t%.3f\n", pid->getCurrent(),pid->getOutputDS()*100);
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////

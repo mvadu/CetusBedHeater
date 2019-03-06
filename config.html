@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang='en'>
+
+<head>
+    <meta charset='utf-8'>
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no, user-scalable=no" />
+    <meta name='theme-color' content='#000' />
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/css/bootstrap.min.css" integrity="sha384-MCw98/SFnGE8fJT3GXwEOngsV7Zt27NXFoaoApmYm81iuXoPkFOJwJ8ERdknLPMO"
+        crossorigin="anonymous">
+    <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.6.1/css/all.css" integrity="sha384-gfdkjb5BdAXd+lj+gudLWI+BXq4IuLW5IT+brZEZsLFm++aCMlF1V92rMkPaX4PP"
+        crossorigin="anonymous">
+    <script src="https://code.jquery.com/jquery-3.3.1.min.js" integrity="sha384-tsQFqpEReu7ZLhBV2VZlAu7zcOV+rXbYlF2cqB8txI/8aZajjp4Bqd+V6D5IgvKT"
+        crossorigin="anonymous"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/js/bootstrap.min.js" integrity="sha384-ChfqqxuZUCnJSK3+MXmPNIyE6ZbWh2IMqE241rYiqJxyMiZ6OW/JmZQ5stwEULTy"
+        crossorigin="anonymous"></script>
+    <style>
+        h1 {
+            text-align: center;
+        }
+
+        html {
+            position: relative;
+
+            background-color: rgb(39, 38, 38);
+            font: 14px sans-serif;
+            color: rgb(153, 153, 204);
+            height: 100%;
+            min-height: 100%;
+        }
+
+        body {
+            margin-bottom: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding-top: 40px;
+            padding-bottom: 40px;
+            background-color: rgb(39, 38, 38);
+            color: #fff;
+            text-shadow: 0 .05rem .1rem rgba(0, 0, 0, .5);
+            box-shadow: inset 0 0 5rem rgba(0, 0, 0, .5);
+            height: 100%;
+            min-height: 100%;
+        }
+
+        .footer {
+            position: absolute;
+            bottom: 0;
+            width: 100%;
+            height: 60px;
+            line-height: 60px;
+        }
+
+        .centered {
+            width: 50%;
+            margin: 0 auto;
+        }
+    </style>
+    <script language='javascript'> 
+        $(document).ready(function () {
+            setTimeout(function () {
+                $.get("/getWifiStatus", function (response) {
+                    if (response.status == '3') {
+                        $('#ap').text(response.AP);
+                        $('#ip').text(response.IP);
+                    }
+                });
+            }, 500);
+
+            $("#resetSensor").click(function () {
+                $.post("/resetTempSensor", function (response) {
+                    if (response != 'OK') {
+                        alert("failed");
+                    }
+                });
+            });
+
+            $("#uploader").click(function () {
+                $(this).prop("disabled", true);
+                var file = $("#firmware")[0].files[0];
+                var formData = new FormData();
+
+                // add assoc key values, this will be posts values
+                formData.append("modified", file.lastModified);
+                formData.append("size", file.size);
+                formData.append("file", file, file.name);
+
+                $.ajax({
+                    type: "POST",
+                    url: "/upload",
+                    xhr: function () {
+                        var myXhr = $.ajaxSettings.xhr();
+                        if (myXhr.upload) {
+                            myXhr.upload.addEventListener('progress', progressHandling, false);
+                        }
+                        return myXhr;
+                    },
+                    success: function (response) {
+                        $('#progress').collapse('hide');
+                        $('#status').collapse('show');
+                        if (response.UpdateStatus == 1)
+                            $('#statusMsg').html(response.Message + "<i class='fas fa-thumbs-up'></i>")
+                        else
+                            $('#statusMsg').html(response.Message + "<i class='fas fa-thumbs-down'></i>")
+                    },
+                    error: function (error) {
+                        $('#status').collapse('show');
+                        $('#statusMsg').html(error.statusText + "<i class='fas fa-thumbs-down'></i>")
+                    },
+                    async: true,
+                    data: formData,
+                    cache: false,
+                    contentType: false,
+                    processData: false,
+                    timeout: 90000
+                });
+                $('#progress').collapse('show');
+            });
+            progressHandling = function (event) {
+                var percent = 0;
+                var position = event.loaded || event.position;
+                var total = event.total;
+                var progress_bar_id = "#progress-wrp";
+                if (event.lengthComputable) {
+                    percent = Math.ceil(position / total * 100);
+                }
+                // update progressbars classes so it fits your code            
+                $('#progressBar').css('width', percent + '%');
+                $('#progressBar').html(percent + '%');
+            };
+        });
+    </script>
+    <title>Cetus Bed Heater Configurations</title>
+</head>
+
+<body class="text-center">
+    <main role="main" class="container">
+        <h1 class="mt-5">Cetus 3d printer bed heater Configurations</h1>
+        <div class="container">
+            <div class="form-row align-items-center">
+                <div class="form-group centered">
+                    <div class="input-group">
+                        <div class="input-group-prepend">
+                            <label class="input-group-text">Upload a new firmware</label>
+                        </div>
+                        <div class="custom-file">
+                            <input type="file" accept=".bin" class="custom-file-input" id="firmware" onchange="$('#upload-file-info').html(this.files[0].name)">
+                            <label class="custom-file-label" id="upload-file-info" for="firmware">Choose file</label>
+                        </div>
+                        <div class="input-group-append">
+                            <button class="btn btn-outline-primary" type="button" id="uploader">Upload</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="form-row align-items-center centered collapse" id="progress">
+                <div style="width: 100%;" class="mx-5">
+                    <div class="progress">
+                        <div id="progressBar" class="progress-bar progress-bar-striped bg-info" style="color:rgba(176, 209, 68, 0.788);width:0%">0%</div>
+                    </div>
+                </div>
+            </div>
+            <div class="form-row align-items-center centered collapse" id="status">
+                <div style="width: 100%;" class="mx-5">
+                    <span id="statusMsg" style="font-size: large;" />
+                </div>
+            </div>
+            <div class="form-row align-items-center">
+                <div class="form-group centered">
+                    <a href="" id="resetSensor">Reset Temperature Sensor</a>
+                </div>
+            </div>
+        </div>
+    </main>
+    <footer class="footer">
+        <div class="container">
+            <span class="text-muted">Connected to</span>
+            <span class="text-muted" id='ap'></span>
+            <span class="text-muted"> IP Address </span>
+            <span class="text-muted" id='ip'></span>
+        </div>
+    </footer>
+</body>
+
+</html>

@@ -72,6 +72,14 @@
     </style>
     <script language='javascript'> 
         $(document).ready(function () {
+            function secondsTimeSpanToHMS(s) {
+                var h = Math.floor(s / 3600); //Get whole hours
+                s -= h * 3600;
+                var m = Math.floor(s / 60); //Get remaining minutes
+                s -= m * 60;
+                return h + ":" + (m < 10 ? '0' + m : m) + ":" + (s < 10 ? '0' + s : s); //zero padding on minutes and seconds
+            }
+
             setTimeout(function () {
                 $.get("/getWifiStatus", function (response) {
                     if (response.status == '3') {
@@ -94,7 +102,7 @@
                     document.body.dataset.heater = response.Heater;
                     $('#current_temp').text(response.Current + "°C");
                     if (response.Heater) {
-                        if (!$('#sp').is(":focus") && $('#sp').val() != response.Target)
+                        if (!($('#sp').is(":focus")) && $('#sp').val() != response.Target)
                             $('#sp').val(response.Target);
                         $ds = (response.DutyCycle * 100);
                         if ($ds > 90)
@@ -106,24 +114,31 @@
                         $ds = $ds.toFixed(0);
                         $('#progressBar').css('width', $ds + '%');
                         $('#progressBar').html($ds + '%');
+                        $('#runtime').html(secondsTimeSpanToHMS(response.RunTime));
                         $(".powered.on").show();
                         $(".powered.off").hide();
                     } else {
                         $(".powered.on").hide();
                         $(".powered.off").show();
                     }
+                }).fail(function () {
+                    $('#current_temp').html("<i class='fas fa-fire'></i>");
                 });
-            }, 1000);
+            }, 2000);
 
             $(".toggle").on("click", function () {
                 $.post("/heaterPower", { turnOn: (document.body.dataset.heater == "true" ? 0 : 1) });
             });
             $("#setTemp").click(function () {
-                $.post("/setHeaterTemperature", { temp: $('#sp').val() });
+                $.post("/setHeaterTemperature", { temp: $('#sp').val() }, function (response) {
+                    if (response != 'OK') {
+                        alert("Invalid temperature");
+                    }
+                });
             });
             $("#setParam").click(function () {
                 $.post("/setPidParam", { p: $('#p').val(), i: $('#i').val(), d: $('#d').val() }, function (response) {
-                    if (response == 'Ok') {
+                    if (response == 'OK') {
                         $(".param").removeClass('highlight-unsaved');
                     }
                 });
@@ -163,6 +178,9 @@
                                     <div id="progressBar" class="progress-bar progress-bar-striped" style="color:rgba(26, 12, 12, 0.788);width:0%">0%</div>
                                 </div>
                             </div>
+                            <div style="min-width: 66px;" class="mx-5">
+                                <span id="runtime"></span>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -186,7 +204,6 @@
                 </div>
                 <div class="col-auto">
                     <span id='current_temp' />
-                    <i class="fas fa-fire"></i>
                 </div>
             </div>
             <div class="form-row align-items-center col-6">
@@ -220,9 +237,6 @@
                 </div>
             </div>
         </div>
-        </div>
-        </form>
-        </div>
     </main>
     <footer class="footer">
         <div class="container">
@@ -230,6 +244,9 @@
             <span class="text-muted" id='ap'></span>
             <span class="text-muted"> IP Address </span>
             <span class="text-muted" id='ip'></span>
+            <a href="/config">
+                <i class="fas fa-cog"></i>
+            </a>
         </div>
     </footer>
 </body>
