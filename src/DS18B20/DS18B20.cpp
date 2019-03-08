@@ -10,6 +10,9 @@ DS18B20::DS18B20(uint8_t power_pin, uint8_t data_pin, DS18B20::Resolution res) :
     gpio_pad_select_gpio(_vcc_pin);
     gpio_set_direction(_vcc_pin, gpio_mode_t::GPIO_MODE_OUTPUT);
     gpio_pullup_en(_vcc_pin);
+    gpio_set_level(_vcc_pin, 1);
+    // gpio_set_level(_vcc_pin, 0);
+    // gpio_pullup_dis(_vcc_pin);
     delay(50);
 }
 
@@ -46,12 +49,14 @@ DS18B20::DS18B20(uint8_t data_pin, DS18B20::Resolution res)
 
 bool DS18B20::waitForBus(int targetState, int timeout)
 {
+    noInterrupts();
     while (gpio_get_level(_data_pin) != targetState)
     {
         if (--timeout == 0)
             break;
         delayMicroseconds(1);
     };
+    interrupts();
     return gpio_get_level(_data_pin) == targetState;
 }
 
@@ -74,12 +79,14 @@ int DS18B20::keepBus(int timeout)
 bool DS18B20::sendResetPulse(void)
 {
     //Tx reset pulse by pulling the 1-Wire bus low for a minimum of 480µs
+    noInterrupts();
     gpio_set_level(_data_pin, 0);
     keepBus(480);
 
     //Let go of the bus, let internal pull up pull it to high
     gpio_set_level(_data_pin, 1);
     waitForBus(HIGH, 15);
+    interrupts();
 
     //DS18B20 detects this rising edge, it waits 15µs to 60µs and then transmits a presence pulse
     // by pulling the 1-Wire bus low for 60µs to 240µs.

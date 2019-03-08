@@ -124,7 +124,7 @@
                 }).fail(function () {
                     $('#current_temp').html("<i class='fas fa-fire'></i>");
                 });
-            }, 2000);
+            }, 1500);
 
             $(".toggle").on("click", function () {
                 $.post("/heaterPower", { turnOn: (document.body.dataset.heater == "true" ? 0 : 1) });

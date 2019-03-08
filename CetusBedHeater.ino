@@ -17,6 +17,7 @@
 #include "web_pages.h"
 #include "src/DS18B20/DS18B20.h"
 #include "src/PIDPwm/PidPwm.h"
+#include "versionInfo.h"
 
 class ChipInfo
 {
@@ -281,10 +282,19 @@ void getChipInfo(AsyncWebServerRequest *request)
 {
     AsyncResponseStream *response = request->beginResponseStream("application/json");
     response->addHeader("Cache-Control", "max-age=86400");
-    response->printf("{\"reason\":%d,\"sdkVersion\":\"%s\",\"chipVersion\":%d,\"coreCount\":%d,\"featureBT\":%d,\"featureBLE\":%d,\"featureWiFi\":%d,\"internalFlash\":%d,\"flashSize\":%d}",
-                     chipInfo.reason, chipInfo.sdkVersion, chipInfo.chipVersion,
-                     chipInfo.coreCount, chipInfo.featureBT, chipInfo.featureBLE,
-                     chipInfo.featureWiFi, chipInfo.internalFlash, chipInfo.flashSize);
+    response->printf("{");
+    response->printf("\"FirmwareVersion\":\"%d.%d\",", firmwareInfo.Major,firmwareInfo.Minor);
+    response->printf("\"FirmwareTime\":%llu,", firmwareInfo.BuildTime);
+    response->printf("\"reason\":%d,", chipInfo.reason);
+    response->printf("\"sdkVersion\":\"%s\",", chipInfo.sdkVersion);
+    response->printf("\"chipVersion\":%d,", chipInfo.chipVersion);
+    response->printf("\"coreCount\":%d,",chipInfo.coreCount);
+    response->printf("\"featureBT\":%d,",chipInfo.featureBT);
+    response->printf("\"featureBLE\":%d,",chipInfo.featureBLE);
+    response->printf("\"featureWiFi\":%d,",chipInfo.featureWiFi);
+    response->printf("\"internalFlash\":%d,",chipInfo.internalFlash);
+    response->printf("\"flashSize\":%d}", chipInfo.flashSize);
+                     
     request->send(response);
 }
 
@@ -473,6 +483,11 @@ bool startMainserver()
         getChipInfo(request);
     });
 
+    server.on("/restart", HTTP_POST, [](AsyncWebServerRequest *request) {
+        request->send(200);
+        ESP.restart();
+    });
+
     server.onNotFound([](AsyncWebServerRequest *request) {
         onNotFound(request);
     });
@@ -623,21 +638,21 @@ void setup()
     digitalWrite(27, LOW);
     delay(500);
 
-    ds = new DS18B20(14, 12, DS18B20::Resolution::bit_10);
+    ds = new DS18B20(12, 14, DS18B20::Resolution::bit_10);
     PidPwm::PidParam param = {2, 5, 0.5};
     pid = new PidPwm(26, 2, 24000, 10, 100, param, [&]() -> double {
         //limit the bed to 100°C, if its more than that report NAN, PidPwm should cut off output bringing down the temp
-        double t = 0;
-        for (int i = 0; i < 5; i++)
-        {
-            double t1 = ds->getTemperature();
-            if (!isnan(t1))
-            {
-                t += t1;
-                t /= 2.0;
-            }
-            delay(50);
-        }
+        double t = ds->getTemperature();
+        // for (int i = 0; i < 5; i++)
+        // {
+        //     double t1 = ds->getTemperature();
+        //     if (!isnan(t1))
+        //     {
+        //         t += t1;
+        //         t /= 2.0;
+        //     }
+        //     delay(50);
+        // }
 
         if (t > 100)
             return NAN;
@@ -647,7 +662,7 @@ void setup()
         return t;
     });
     pid->setTarget(targetTemp);
-    pid->setComputeInterval(2000);
+    pid->setComputeInterval(1000);
 }
 
 void loop()

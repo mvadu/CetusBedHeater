@@ -55,6 +55,10 @@
             width: 50%;
             margin: 0 auto;
         }
+
+        .force-row {
+            display: block;
+        }
     </style>
     <script language='javascript'> 
         $(document).ready(function () {
@@ -65,14 +69,27 @@
                         $('#ip').text(response.IP);
                     }
                 });
+            }, 300);
+            setTimeout(function () {
+                $.get("/getChipInfo", function (response) {
+                    $('#fwv').text(response.FirmwareVersion);
+                    $('#fwt').text(new Date(response.FirmwareTime).toLocaleDateString());
+                    $('#rsn').text(response.reason);
+                    $('#sdkv').text(response.sdkVersion);
+                    $('#chpv').text(response.chipVersion);
+                    $('#cores').text(response.coreCount);
+                    $('#bt').text(response.featureBT);
+                    $('#ble').text(response.featureBLE);
+                    $('#wifi').text(response.featureWiFi);
+                    $('#iflash').text(response.internalFlash);
+                    $('#flash').text(response.flashSize);
+                }).fail(function( jqXHR, textStatus ) {
+                    console.log( "Request failed: " + textStatus );
+                });
             }, 500);
 
-            $("#resetSensor").click(function () {
-                $.post("/resetTempSensor", function (response) {
-                    if (response != 'OK') {
-                        alert("failed");
-                    }
-                });
+            $("#restart").click(function () {
+                $.post("/restart", { c: 1 });
             });
 
             $("#uploader").click(function () {
@@ -137,39 +154,123 @@
     <main role="main" class="container">
         <h1 class="mt-5">Cetus 3d printer bed heater Configurations</h1>
         <div class="container">
-            <div class="form-row align-items-center">
-                <div class="form-group centered">
-                    <div class="input-group">
-                        <div class="input-group-prepend">
-                            <label class="input-group-text">Upload a new firmware</label>
-                        </div>
-                        <div class="custom-file">
-                            <input type="file" accept=".bin" class="custom-file-input" id="firmware" onchange="$('#upload-file-info').html(this.files[0].name)">
-                            <label class="custom-file-label" id="upload-file-info" for="firmware">Choose file</label>
-                        </div>
-                        <div class="input-group-append">
-                            <button class="btn btn-outline-primary" type="button" id="uploader">Upload</button>
-                        </div>
+            <div class="row centered">
+                <h4>Chip Information</h4>
+            </div>
+
+            <div class="row centered">
+                <div class="col-auto">
+                    <label class="label">FirmwareVersion</label>
+                </div>
+                <div class="col-auto">
+                    <span id='fwv' /> </div>
+            </div>
+            <div class="row centered">
+                <div class="col-auto">
+                    <label class="label">FirmwareTime</label>
+                </div>
+                <div class="col-auto">
+                    <span id='fwt' /> </div>
+            </div>
+            <div class="row centered">
+                <div class="col-auto">
+                    <label class="label">Reset reason</label>
+                </div>
+                <div class="col-auto">
+                    <span id='rsn' /> </div>
+            </div>
+            <div class="row centered">
+                <div class="col-auto">
+                    <label class="label">Esp32 SDK Version</label>
+                </div>
+                <div class="col-auto">
+                    <span id='sdkv' /> </div>
+            </div>
+            <div class="row centered">
+                <div class="col-auto">
+                    <label class="label">chip Version</label>
+                </div>
+                <div class="col-auto">
+                    <span id='chpv' /> </div>
+            </div>
+            <div class="row centered">
+                <div class="col-auto">
+                    <label class="label">No. of Cores</label>
+                </div>
+                <div class="col-auto">
+                    <span id='cores' /> </div>
+            </div>
+            <div class="row centered">
+                <div class="col-auto">
+                    <label class="label">Has Bluetooth</label>
+                </div>
+                <div class="col-auto">
+                    <span id='bt' /> </div>
+            </div>
+            <div class="row centered">
+                <div class="col-auto">
+                    <label class="label">Supports BLE</label>
+                </div>
+                <div class="col-auto">
+                    <span id='ble' /> </div>
+            </div>
+            <div class="row centered">
+                <div class="col-auto">
+                    <label class="label">Supports WiFi</label>
+                </div>
+                <div class="col-auto">
+                    <span id='wifi' /> </div>
+            </div>
+            <div class="row centered">
+                <div class="col-auto">
+                    <label class="label">Has internal Flash</label>
+                </div>
+                <div class="col-auto">
+                    <span id='iflash' /> </div>
+            </div>
+            <div class="row centered">
+                <div class="col-auto">
+                    <label class="label">Flash Size</label>
+                </div>
+                <div class="col-auto">
+                    <span id='flash' /> </div>
+            </div>
+        </div>
+
+        <div class="form-row align-items-center">
+            <div class="form-group centered">
+                <h4>Firmware Update</h4>
+                <div class="input-group">
+                    <div class="input-group-prepend">
+                        <label class="input-group-text">Upload a new firmware</label>
+                    </div>
+                    <div class="custom-file">
+                        <input type="file" accept=".bin" class="custom-file-input" id="firmware" onchange="$('#upload-file-info').html(this.files[0].name)">
+                        <label class="custom-file-label" id="upload-file-info" for="firmware">Choose file</label>
+                    </div>
+                    <div class="input-group-append">
+                        <button class="btn btn-outline-primary" type="button" id="uploader">Upload</button>
                     </div>
                 </div>
             </div>
-            <div class="form-row align-items-center centered collapse" id="progress">
-                <div style="width: 100%;" class="mx-5">
-                    <div class="progress">
-                        <div id="progressBar" class="progress-bar progress-bar-striped bg-info" style="color:rgba(176, 209, 68, 0.788);width:0%">0%</div>
-                    </div>
+        </div>
+        <div class="form-row align-items-center centered collapse" id="progress">
+            <div style="width: 100%;" class="mx-5">
+                <div class="progress">
+                    <div id="progressBar" class="progress-bar progress-bar-striped bg-info" style="color:rgba(176, 209, 68, 0.788);width:0%">0%</div>
                 </div>
             </div>
-            <div class="form-row align-items-center centered collapse" id="status">
-                <div style="width: 100%;" class="mx-5">
-                    <span id="statusMsg" style="font-size: large;" />
-                </div>
+        </div>
+        <div class="form-row align-items-center centered collapse" id="status">
+            <div style="width: 100%;" class="mx-5">
+                <span id="statusMsg" style="font-size: large;" />
             </div>
-            <div class="form-row align-items-center">
-                <div class="form-group centered">
-                    <a href="" id="resetSensor">Reset Temperature Sensor</a>
-                </div>
+        </div>
+        <div class="form-row align-items-center">
+            <div class="form-group centered">
+                <a href="" id="restart">Restart Esp32</a>
             </div>
+        </div>
         </div>
     </main>
     <footer class="footer">
