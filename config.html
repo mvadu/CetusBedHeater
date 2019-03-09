@@ -83,8 +83,8 @@
                     $('#wifi').text(response.featureWiFi);
                     $('#iflash').text(response.internalFlash);
                     $('#flash').text(response.flashSize);
-                }).fail(function( jqXHR, textStatus ) {
-                    console.log( "Request failed: " + textStatus );
+                }).fail(function (jqXHR, textStatus) {
+                    console.log("Request failed: " + textStatus);
                 });
             }, 500);
 
@@ -275,10 +275,15 @@
     </main>
     <footer class="footer">
         <div class="container">
-            <span class="text-muted">Connected to</span>
-            <span class="text-muted" id='ap'></span>
-            <span class="text-muted"> IP Address </span>
-            <span class="text-muted" id='ip'></span>
+            <div>
+                <span class="text-muted">Connected to</span>
+                <span class="text-muted" id='ap'></span>
+                <span class="text-muted"> IP Address </span>
+                <span class="text-muted" id='ip'></span>
+            </div>
+            <div>
+                <span>Copyright: Adystech.com</span>
+            </div>
         </div>
     </footer>
 </body>

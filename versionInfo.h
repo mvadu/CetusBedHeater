@@ -16,4 +16,4 @@ struct VersionInfo
   uint64_t  BuildTime;
 };
 
-const VersionInfo firmwareInfo = VersionInfo{    Major:  1,    Minor:  6,    BuildTime:  1552006911013};
+const VersionInfo firmwareInfo = VersionInfo{    Major:  1,    Minor:  8,    BuildTime:  1552153960649};

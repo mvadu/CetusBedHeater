@@ -161,9 +161,12 @@ void PidPwm::setComputeInterval(uint32_t ts)
         _ki *= ratio;
         _kd /= ratio;
         _computeInterval = ts;
-        xTimerChangePeriod(_computeTimer,
-                           pdMS_TO_TICKS(_computeInterval),
-                           10);
+        if (isRunning())
+        {
+            xTimerChangePeriod(_computeTimer,
+                               pdMS_TO_TICKS(_computeInterval),
+                               10);
+        }
     }
 }
 

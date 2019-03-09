@@ -1,3 +1,6 @@
+//Copyright: mvadu@adystech
+//license: MIT
+
 #include <Arduino.h>
 #include <WiFi.h>
 #include <DNSServer.h>
@@ -306,7 +309,7 @@ void getHeaterStatus(AsyncWebServerRequest *request)
     if (pid->isRunning())
     {
         response->printf("{\"Heater\":true,\"Target\":%.3f,\"Current\":%.3f,\"DutyCycle\":%.3f,\"RunTime\":%lu}",
-                         pid->getTarget(), pid->getCurrent(), pid->getOutputDS(), (millis() - heaterStartTs) / 1000);
+                         pid->getTarget(), ds->getTemperature(), pid->getOutputDS(), (millis() - heaterStartTs) / 1000);
     }
     else
     {
