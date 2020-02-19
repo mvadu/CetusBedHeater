@@ -1,0 +1,4 @@
+## Libraries.
+
+1. DS18B20
+I wanted to understand Maxim 1 wire protocol, so I wrote this one. ANy standard one wire library would have worked for the purposes of this project.
