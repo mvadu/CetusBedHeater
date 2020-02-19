@@ -180,7 +180,9 @@ unsigned long DS18B20::getConversionTime()
     case Resolution::bit_12:
         return (750 + 100);
     }
+    return 0;
 }
+
 double DS18B20::getTemperature(void)
 {
     //if there is a read request before the minimum time, return last known value.
@@ -227,6 +229,8 @@ double DS18B20::getTemperature(void)
                 break;
             case Resolution::bit_11:
                 raw = raw & ~1;
+                break;
+            case Resolution::bit_12:
                 break;
             }
             // default is 12 bit resolution, 750 ms conversion time

@@ -67,7 +67,13 @@
         }
 
         .highlight-unsaved {
-            border-color: rgb(209, 48, 48)
+            border-color: rgb(209, 48, 48);
+        }
+
+        .sameline {
+            display: flex;
+            float: left;
+            width: 25%;
         }
     </style>
     <script language='javascript'> 
@@ -78,6 +84,18 @@
                 var m = Math.floor(s / 60); //Get remaining minutes
                 s -= m * 60;
                 return h + ":" + (m < 10 ? '0' + m : m) + ":" + (s < 10 ? '0' + s : s); //zero padding on minutes and seconds
+            }
+
+            function getStartTime(s) {
+                var t = new Date();
+                t.setSeconds(t.getSeconds() - s);
+                return t;
+            }
+
+            function getEndTime(start, duration) {
+                var t = start;
+                t.setSeconds(t.getSeconds() + duration * 3600);
+                return t;
             }
 
             setTimeout(function () {
@@ -104,6 +122,8 @@
                     if (response.Heater) {
                         if (!($('#sp').is(":focus")) && $('#sp').val() != response.Target)
                             $('#sp').val(response.Target);
+                        if (!($('#timeout').is(":focus")) && $('#timeout').val() != response.Timeout)
+                            $('#timeout').val(response.Timeout);
                         $ds = (response.DutyCycle * 100);
                         if ($ds > 90)
                             $('#progressBar').removeClass('bg-info').removeClass('bg-warning').addClass('bg-danger')
@@ -114,7 +134,9 @@
                         $ds = $ds.toFixed(0);
                         $('#progressBar').css('width', $ds + '%');
                         $('#progressBar').html($ds + '%');
-                        $('#runtime').html(secondsTimeSpanToHMS(response.RunTime));
+                        $('#runTime').html(secondsTimeSpanToHMS(response.RunTime));
+                        $('#startTime').html(getStartTime(response.RunTime).toTimeString().substr(0, 8));
+                        $('#stopTime').html(getEndTime(getStartTime(response.RunTime),response.Timeout).toTimeString().substr(0, 8));
                         $(".powered.on").show();
                         $(".powered.off").hide();
                     } else {
@@ -133,6 +155,13 @@
                 $.post("/setHeaterTemperature", { temp: $('#sp').val() }, function (response) {
                     if (response != 'OK') {
                         alert("Invalid temperature");
+                    }
+                });
+            });
+            $("#settimeout").click(function () {
+                $.post("/setTimeout", { timeout: $('#timeout').val() }, function (response) {
+                    if (response != 'OK') {
+                        alert("Invalid timeout");
                     }
                 });
             });
@@ -178,9 +207,26 @@
                                     <div id="progressBar" class="progress-bar progress-bar-striped" style="color:rgba(26, 12, 12, 0.788);width:0%">0%</div>
                                 </div>
                             </div>
-                            <div style="min-width: 66px;" class="mx-5">
-                                <span id="runtime"></span>
-                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="form-row align-items-center">
+
+
+                <div class="powered">
+                    <div class="powered on toggle ">
+                        <div style="min-width: 66px;" class="col-auto">
+                            Started at 
+                            <span id="startTime"></span>
+                        </div>
+                        <div style="min-width: 66px;" class="col-auto">
+                            Running for 
+                            <span id="runTime"></span>
+                        </div>
+                        <div style="min-width: 66px;" class="col-auto">
+                            Will turn off at 
+                            <span id="stopTime"></span>
                         </div>
                     </div>
                 </div>
@@ -206,32 +252,16 @@
                     <span id='current_temp' />
                 </div>
             </div>
-            <div class="form-row align-items-center col-6">
-                <div class="card-title">
-                    <a data-toggle="collapse" href="#tuningParams" class="card-title mx-3">
-                        Tuning Params
-                    </a>
-                    <div id="tuningParams" class="form-group collapse">
-                        <div class="input-group">
-                            <div class="input-group-prepend">
-                                <label class="input-group-text">Proportional</label>
-                            </div>
-                            <input id='p' type="number" step='0.01' class="form-control param" maxlength=2 />
-                        </div>
-                        <div class="input-group">
-                            <div class="input-group-prepend">
-                                <label class="input-group-text">Integral</label>
-                            </div>
-                            <input id='i' type="number" step='0.01' class="form-control param" maxlength=2 />
-                        </div>
-                        <div class="input-group">
-                            <div class="input-group-prepend">
-                                <label class="input-group-text">Derivative</label>
-                            </div>
-                            <input id='d' type="number" step='0.01' class="form-control param" maxlength=2 />
-                        </div>
-                        <div class="input-group">
-                            <button type="button" class='btn  btn-outline-secondary' id="setParam">Save</button>
+            
+            <div class="form-row align-items-center">
+                <div class="col-auto">
+                    <label class="col-form-label">Add Runtime (Hrs)</label>
+                </div>
+                <div class="col-auto">
+                    <div class="input-group m-2">
+                        <input type="number" id='timeout' class="narrow form-control">
+                        <div class="input-group-append">
+                            <button type="button" class='btn  btn-outline-secondary' id="addtime">Add</button>
                         </div>
                     </div>
                 </div>

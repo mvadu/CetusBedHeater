@@ -101,6 +101,7 @@
             0% {
                 border-top: 2px solid rgba(0, 0, 0, 0.1);
             }
+
             100% {
                 border-top: 2px solid #00b7f2;
             }
@@ -168,7 +169,7 @@
             width: 200px;
         }
     </style>
-    <script language='javascript'> 
+    <script language='javascript'>
         function toggle(elementId) {
             var ele = document.getElementById(elementId);
             if (ele.style.display == 'block') {
@@ -290,8 +291,12 @@
             };
             document.getElementById('status').innerText = "Saving..";
             showModal();
-            oReq.open('GET', '/save', true);
-            oReq.send();
+            oReq.open('POST', '/save', true);
+            var put ="";
+            if (!isEmpty(document.getElementById('client').value)) {
+                put += 'client=' + document.getElementById('client').value;
+            }
+            oReq.send(put);
         }
 
         function connectAccessPoint() {
@@ -300,14 +305,13 @@
                 return;
             var secure = document.getElementById('ssid').dataset.secure == '1';
             //if one of the scanned AP is selected, check if password is mandatory
-            var pwd = document.getElementById('pwd').value;
-            if (secure && isEmpty(pwd)) {
+            var password = document.getElementById('password').value;
+            if (secure && isEmpty(password)) {
                 alert('Network needs Authentication!!'); return;
             }
             var oReq = new XMLHttpRequest;
             oReq.open("POST", '/connect');
             oReq.setRequestHeader("Content-type", "application/x-www-form-urlencoded");
-
             oReq.onreadystatechange = function () {
                 if (4 == this.readyState && 200 == this.status) {
                     if (this.responseText == '1') {
@@ -317,7 +321,11 @@
             };
             document.getElementById('status').innerText = "Connecting..";
             showModal();
-            oReq.send('ssid=' + ssid + '&pwd=' + pwd);
+            var post = 'ssid=' + ssid + '&password=' + password;
+            if (!isEmpty(document.getElementById('client').value)) {
+                post += '&client=' + document.getElementById('client').value;
+            }
+            oReq.send(post);
         }
 
         function updateStatus(single) {
@@ -325,16 +333,20 @@
                 var oReq = new XMLHttpRequest();
                 oReq.onreadystatechange = function () {
                     if (4 == this.readyState && 200 == this.status) {
-                        if (single == true) { clearInterval(timer); }
+                        if (single == true) {
+                            document.getElementsByName('client')[0].placeholder = window.location.hostname;
+                            clearInterval(timer);
+                        }
                         var response = JSON.parse(this.responseText);
                         if (response.status == '3') {
                             document.getElementById('status').innerText = "Connected, local IP address" + response.IP;
                             document.body.dataset.ip = response.IP;
                             document.body.dataset.ssid = response.AP;
                             document.getElementById('ssid').value = response.AP;
-                            document.getElementById('pwd').setAttribute("disabled","disabled");
+                            document.getElementById('password').setAttribute("disabled", "disabled");
                             hideModal();
                             document.getElementById('save').style.display = 'block';
+                            document.getElementById('ssid').disabled = true;
                             document.getElementById('connect').style.display = 'none';
                             clearInterval(timer);
                         } else if (response.status == '4') {
@@ -364,11 +376,14 @@
     <div id='main' class='container'>
         <form>
             <label>SSID</label>
-            <input id='ssid' name='ssid' maxlength=50 placeholder='access point' onclick='javascript:toggle("results");' />
+            <input id='ssid' name='ssid' maxlength=50 placeholder='access point'
+                onclick='javascript:toggle("results");' />
             <ul class='access_points' id='results'>
             </ul>
             <label>Password</label>
-            <input type='password' id='pwd' name='pwd' maxlength=50 />
+            <input type="password" autocomplete="off" name="password" id="password">
+            <label>Client Name</label>
+            <input id='client' name='client' maxlength=25 placeholder=' ' />
         </form>
         <div style="overflow: hidden;">
             <button class='btn' onclick='javascript:scanWiFi()'>Scan for Networks</button>
