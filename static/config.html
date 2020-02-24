@@ -5,13 +5,15 @@
     <meta charset='utf-8'>
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no, user-scalable=no" />
     <meta name='theme-color' content='#000' />
-    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/css/bootstrap.min.css" integrity="sha384-MCw98/SFnGE8fJT3GXwEOngsV7Zt27NXFoaoApmYm81iuXoPkFOJwJ8ERdknLPMO"
-        crossorigin="anonymous">
-    <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.6.1/css/all.css" integrity="sha384-gfdkjb5BdAXd+lj+gudLWI+BXq4IuLW5IT+brZEZsLFm++aCMlF1V92rMkPaX4PP"
-        crossorigin="anonymous">
-    <script src="https://code.jquery.com/jquery-3.3.1.min.js" integrity="sha384-tsQFqpEReu7ZLhBV2VZlAu7zcOV+rXbYlF2cqB8txI/8aZajjp4Bqd+V6D5IgvKT"
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/css/bootstrap.min.css"
+        integrity="sha384-MCw98/SFnGE8fJT3GXwEOngsV7Zt27NXFoaoApmYm81iuXoPkFOJwJ8ERdknLPMO" crossorigin="anonymous">
+    <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.6.1/css/all.css"
+        integrity="sha384-gfdkjb5BdAXd+lj+gudLWI+BXq4IuLW5IT+brZEZsLFm++aCMlF1V92rMkPaX4PP" crossorigin="anonymous">
+    <script src="https://code.jquery.com/jquery-3.3.1.min.js"
+        integrity="sha384-tsQFqpEReu7ZLhBV2VZlAu7zcOV+rXbYlF2cqB8txI/8aZajjp4Bqd+V6D5IgvKT"
         crossorigin="anonymous"></script>
-    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/js/bootstrap.min.js" integrity="sha384-ChfqqxuZUCnJSK3+MXmPNIyE6ZbWh2IMqE241rYiqJxyMiZ6OW/JmZQ5stwEULTy"
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/js/bootstrap.min.js"
+        integrity="sha384-ChfqqxuZUCnJSK3+MXmPNIyE6ZbWh2IMqE241rYiqJxyMiZ6OW/JmZQ5stwEULTy"
         crossorigin="anonymous"></script>
     <style>
         h1 {
@@ -20,7 +22,6 @@
 
         html {
             position: relative;
-
             background-color: rgb(39, 38, 38);
             font: 14px sans-serif;
             color: rgb(153, 153, 204);
@@ -52,16 +53,90 @@
         }
 
         .centered {
-            width: 50%;
+            /* width: 50%; */
             margin: 0 auto;
         }
 
         .force-row {
             display: block;
+            width: 100%;
+        }
+
+        .highlight-unsaved {
+            border-color: rgb(209, 48, 48);
+        }
+
+        .header-link {
+            text-align: left;
+        }
+
+        .label-text {
+            display: flex;
+            align-items: center;
+            font-size: 1rem;
+            font-weight: 400;
+            line-height: 1.5;
+            color: #495057;
+            text-align: center;
+            white-space: nowrap;
+            background-color: #e9ecef;
+            border: 1px solid #ced4da;
+            border-radius: .25rem;
+            min-width: 25%;
+            width: max-content;
+            padding: .375rem .75rem;
+        }
+
+        .value-text {
+            display: block;
+            height: calc(2.25rem + 2px);
+            font-size: 1rem;
+            line-height: 1.5;
+            color: #495057;
+            background-color: #fff;
+            background-clip: padding-box;
+            border: 1px solid #ced4da;
+            border-radius: .25rem;
+            min-width: 30%;
+            width: max-content;
+        }
+
+        .padded {
+            padding: .375rem .75rem;
         }
     </style>
-    <script language='javascript'> 
+    <script language='javascript'>
         $(document).ready(function () {
+            $('.params').on('show.bs.collapse', function () {
+                var parentForm = this;
+                $.get("/getConfig?config=" + $(this).attr('id'), function (response) {
+                    $('.param', parentForm).each(function () {
+                        $(this).val(response[$(this).attr('id')]);
+                    });
+                });
+            })
+            $(".btn-outline-secondary").click(function () {
+                var parentForm = $(this).closest('.form-group');
+                var changed = $('.highlight-unsaved', parentForm);
+                var payload = { config: parentForm.attr('id') };
+                $('.param', parentForm).each(function () {
+                    payload[$(this).attr('id')] = $(this).val();
+                });
+                $.post("/setConfig", payload, function (response) {
+                    if (response == 'OK') {
+                        changed.each(function () {
+                            $(this).removeClass('highlight-unsaved');
+                        });
+                    }
+                });
+            });
+
+
+            $(".param").on("change", function () {
+                $(this).addClass('highlight-unsaved');
+            });
+
+
             setTimeout(function () {
                 $.get("/getWifiStatus", function (response) {
                     if (response.status == '3') {
@@ -72,25 +147,21 @@
             }, 300);
             setTimeout(function () {
                 $.get("/getChipInfo", function (response) {
-                    $('#fwv').text(response.FirmwareVersion);
-                    $('#fwt').text(new Date(response.FirmwareTime).toLocaleDateString());
-                    $('#rsn').text(response.reason);
-                    $('#sdkv').text(response.sdkVersion);
-                    $('#chpv').text(response.chipVersion);
-                    $('#cores').text(response.coreCount);
-                    $('#bt').text(response.featureBT);
-                    $('#ble').text(response.featureBLE);
-                    $('#wifi').text(response.featureWiFi);
-                    $('#iflash').text(response.internalFlash);
-                    $('#flash').text(response.flashSize);
+                    var parentForm = $("#chipInfo");
+                    Object.keys(response).forEach(function (key) {
+                        var row = $("<div>", {
+                            class: "row centered padded"
+                        });
+                        var label = $("<label>", { class: "label-text" }).text(key);
+                        var val = $("<span>", { class: "value-text" }).text(response[key]);
+                        row.append(label, val);
+                        parentForm.append(row);
+                    });
                 }).fail(function (jqXHR, textStatus) {
                     console.log("Request failed: " + textStatus);
                 });
             }, 500);
 
-            $("#restart").click(function () {
-                $.post("/restart", { c: 1 });
-            });
 
             $("#uploader").click(function () {
                 $(this).prop("disabled", true);
@@ -155,95 +226,13 @@
         <h1 class="mt-5">Cetus 3d printer bed heater Configurations</h1>
         <div class="container">
             <div class="row centered">
-                <a data-toggle="collapse" href="#chipInfo" class="card-title mx-3">
-                    Chip Information
-                </a>
-                <div id="chipInfo" class="form-group collapse">
-                    <div class="row centered">
-                        <div class="col-auto">
-                            <label class="label">FirmwareVersion</label>
-                        </div>
-                        <div class="col-auto">
-                            <span id='fwv' /> </div>
-                    </div>
-                    <div class="row centered">
-                        <div class="col-auto">
-                            <label class="label">FirmwareTime</label>
-                        </div>
-                        <div class="col-auto">
-                            <span id='fwt' /> </div>
-                    </div>
-                    <div class="row centered">
-                        <div class="col-auto">
-                            <label class="label">Reset reason</label>
-                        </div>
-                        <div class="col-auto">
-                            <span id='rsn' /> </div>
-                    </div>
-                    <div class="row centered">
-                        <div class="col-auto">
-                            <label class="label">Esp32 SDK Version</label>
-                        </div>
-                        <div class="col-auto">
-                            <span id='sdkv' /> </div>
-                    </div>
-                    <div class="row centered">
-                        <div class="col-auto">
-                            <label class="label">chip Version</label>
-                        </div>
-                        <div class="col-auto">
-                            <span id='chpv' /> </div>
-                    </div>
-                    <div class="row centered">
-                        <div class="col-auto">
-                            <label class="label">No. of Cores</label>
-                        </div>
-                        <div class="col-auto">
-                            <span id='cores' /> </div>
-                    </div>
-                    <div class="row centered">
-                        <div class="col-auto">
-                            <label class="label">Has Bluetooth</label>
-                        </div>
-                        <div class="col-auto">
-                            <span id='bt' /> </div>
-                    </div>
-                    <div class="row centered">
-                        <div class="col-auto">
-                            <label class="label">Supports BLE</label>
-                        </div>
-                        <div class="col-auto">
-                            <span id='ble' /> </div>
-                    </div>
-                    <div class="row centered">
-                        <div class="col-auto">
-                            <label class="label">Supports WiFi</label>
-                        </div>
-                        <div class="col-auto">
-                            <span id='wifi' /> </div>
-                    </div>
-                    <div class="row centered">
-                        <div class="col-auto">
-                            <label class="label">Has internal Flash</label>
-                        </div>
-                        <div class="col-auto">
-                            <span id='iflash' /> </div>
-                    </div>
-                    <div class="row centered">
-                        <div class="col-auto">
-                            <label class="label">Flash Size</label>
-                        </div>
-                        <div class="col-auto">
-                            <span id='flash' /> </div>
-                    </div>
-                </div>
-            </div>
-            <div class="row centered">
                 <div class="card-title">
-                    <a data-toggle="collapse" href="#tuningParams" class="card-title mx-3">
-                        PID Tuning Params
-                    </a>
-                    <div id="tuningParams" class="form-group collapse">
+                    <div class="header-link">
+                        <a data-toggle="collapse" href="#PidParams" class="card-title mx-3">
+                            PID Tuning Params
+                        </a>
+                    </div>
+                    <div id="PidParams" class="form-group collapse params">
                         <div class="input-group">
                             <div class="input-group-prepend">
                                 <label class="input-group-text">Proportional</label>
@@ -263,40 +252,82 @@
                             <input id='d' type="number" step='0.01' class="form-control param" maxlength=2 />
                         </div>
                         <div class="input-group">
-                            <button type="button" class='btn  btn-outline-secondary' id="setParam">Save</button>
+                            <button type="button" class='btn  btn-outline-secondary'>Save</button>
                         </div>
                     </div>
                 </div>
             </div>
             <div class="row centered">
                 <div class="card-title">
-                    <a data-toggle="collapse" href="#pwmParams" class="card-title mx-3">
-                        Heater Parameters
-                    </a>
-                    <div id="pwmParams" class="form-group collapse">
+                    <div class="header-link">
+                        <a data-toggle="collapse" href="#PwmParams" class="card-title mx-3">
+                            Heater Parameters
+                        </a></div>
+                    <div id="PwmParams" class="form-group collapse params">
+                        <div class="input-group">
+                            <div class="input-group-prepend">
+                                <label class="input-group-text">Maximum Bed Temperature</label>
+                            </div>
+                            <input id='Temp' type="number" step='1' class="form-control param" maxlength=3 max="150" />
+                        </div>
                         <div class="input-group">
                             <div class="input-group-prepend">
                                 <label class="input-group-text">Maximum Duty Cycle</label>
                             </div>
-                            <input id='maxD' type="number" step='0.01' class="form-control param" maxlength=2 />
+                            <input id='maxD' type="number" step='1' class="form-control param" maxlength=2 max="100"
+                                min="10" />
                         </div>
                         <div class="input-group">
                             <div class="input-group-prepend">
                                 <label class="input-group-text">Minimum Duty Cycle</label>
                             </div>
-                            <input id='minD' type="number" step='0.01' class="form-control param" maxlength=2 />
+                            <input id='minD' type="number" step='1' class="form-control param" maxlength=2 max="90"
+                                min="0" />
                         </div>
                         <div class="input-group">
-                            <button type="button" class='btn  btn-outline-secondary' id="setPwmParam">Save</button>
+                            <button type="button" class='btn  btn-outline-secondary'>Save</button>
                         </div>
                     </div>
                 </div>
             </div>
             <div class="row centered">
                 <div class="card-title">
-                    <a data-toggle="collapse" href="#updateFirmware" class="card-title mx-3">
-                        Firmware Update
-                    </a>
+                    <div class="header-link">
+                        <a data-toggle="collapse" href="#NetParams" class="card-title mx-3">
+                            Network Parameters
+                        </a></div>
+                    <div id="NetParams" class="form-group collapse params">
+                        <div class="input-group">
+                            <div class="input-group-prepend">
+                                <label class="input-group-text">SSID</label>
+                            </div>
+                            <input id='ssid' maxlength=50 onclick='javascript:toggle("results");'
+                                class="form-control param" />
+                        </div>
+                        <div class="input-group">
+                            <div class="input-group-prepend">
+                                <label class="input-group-text">Password</label>
+                            </div>
+                            <input type="password" autocomplete="off" id="password" class="form-control param" />
+                        </div>
+                        <div class="input-group">
+                            <div class="input-group-prepend">
+                                <label class="input-group-text">Host Name</label>
+                            </div>
+                            <input id='client' maxlength=50 class="form-control param" />
+                        </div>
+                        <div class="input-group">
+                            <button type="button" class='btn  btn-outline-secondary'>Save</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="row centered">
+                <div class="card-title">
+                    <div class="header-link">
+                        <a data-toggle="collapse" href="#updateFirmware" class="card-title mx-3">
+                            Firmware Update
+                        </a></div>
                     <div id="updateFirmware" class="form-group centered collapse">
                         <h4></h4>
                         <div class="input-group">
@@ -304,8 +335,10 @@
                                 <label class="input-group-text">Upload a new firmware</label>
                             </div>
                             <div class="custom-file">
-                                <input type="file" accept=".bin" class="custom-file-input" id="firmware" onchange="$('#upload-file-info').html(this.files[0].name)">
-                                <label class="custom-file-label" id="upload-file-info" for="firmware">Choose file</label>
+                                <input type="file" accept=".bin" class="custom-file-input" id="firmware"
+                                    onchange="$('#upload-file-info').html(this.files[0].name)">
+                                <label class="custom-file-label" id="upload-file-info" for="firmware">Choose
+                                    file</label>
                             </div>
                             <div class="input-group-append">
                                 <button class="btn btn-outline-primary" type="button" id="uploader">Upload</button>
@@ -316,7 +349,8 @@
                 <div class="form-row align-items-center centered collapse" id="progress">
                     <div style="width: 100%;" class="mx-5">
                         <div class="progress">
-                            <div id="progressBar" class="progress-bar progress-bar-striped bg-info" style="color:rgba(176, 209, 68, 0.788);width:0%">0%</div>
+                            <div id="progressBar" class="progress-bar progress-bar-striped bg-info"
+                                style="color:rgba(176, 209, 68, 0.788);width:0%">0%</div>
                         </div>
                     </div>
                 </div>
@@ -326,9 +360,18 @@
                     </div>
                 </div>
             </div>
+            <div class="row centered">
+                <div class="header-link">
+                    <a data-toggle="collapse" href="#chipInfo" class="card-title mx-3">
+                        Chip Information
+                    </a></div>
+                <div id="chipInfo" class="form-group collapse force-row">
+
+                </div>
+            </div>
             <div class="form-row align-items-center">
                 <div class="form-group centered">
-                    <a href="" id="restart">Restart Esp32</a>
+                    <a href="" id="restart">Restart!!</a>
                 </div>
             </div>
 

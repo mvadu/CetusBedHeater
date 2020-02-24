@@ -63,7 +63,7 @@ process {
             if (-not $found) {
                 Add-Content $target "`n const uint8_t $targetVar[] PROGMEM = {$out};`n//Length:$len"
             }
-            Write-Output "$source -> Len: $len" 
+            Write-Output "$source : $((Get-Item $source).Length) -> $len" 
         }
     }
 }
