@@ -105,11 +105,6 @@
                         $('#ip').text(response.IP);
                     }
                 });
-                $.get("/getPidParam", function (response) {
-                    $('#p').val(response.Proportional);
-                    $('#i').val(response.Integral);
-                    $('#d').val(response.Derivitive);
-                });
             }, 500);
             mainTimer = setInterval(function () {
                 $.ajax({
@@ -165,16 +160,7 @@
                     }
                 });
             });
-            $("#setParam").click(function () {
-                $.post("/setPidParam", { p: $('#p').val(), i: $('#i').val(), d: $('#d').val() }, function (response) {
-                    if (response == 'OK') {
-                        $(".param").removeClass('highlight-unsaved');
-                    }
-                });
-            });
-            $(".param").on("change", function () {
-                $(this).addClass('highlight-unsaved');
-            });
+           
         });
 
     </script>
