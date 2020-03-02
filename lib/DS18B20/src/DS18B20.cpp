@@ -20,10 +20,13 @@ DS18B20::DS18B20(uint8_t data_pin, DS18B20::Resolution res)
 {
     _data_pin = (gpio_num_t)data_pin;
     _res = res;
-    //some of the pads on ESP32 are muliplexed to do more than one act. If we want only GPIO then we need tp ask.
+    //some of the pads on ESP32 are muliplexed to do more than one act. If we want only GPIO then we need to ask.
     gpio_pad_select_gpio(_data_pin);
     gpio_set_direction(_data_pin, gpio_mode_t::GPIO_MODE_INPUT_OUTPUT);
     gpio_pullup_en(_data_pin);
+}
+
+bool DS18B20::begin(){
     //powerdown the bus if no sensor is detected
     if (sendResetPulse())
     {
@@ -32,10 +35,10 @@ DS18B20::DS18B20(uint8_t data_pin, DS18B20::Resolution res)
         delay(10);
         writeByte(0);
         writeByte(0);
-        writeByte(res);
+        writeByte(_res);
         delay(10);
         sendResetPulse();
-        Serial.println("Sensor found!");
+        return true;
     }
     else
     {
@@ -43,7 +46,7 @@ DS18B20::DS18B20(uint8_t data_pin, DS18B20::Resolution res)
         gpio_pullup_dis(_data_pin);
         gpio_set_level(_vcc_pin, 0);
         gpio_pullup_dis(_vcc_pin);
-        Serial.println("Sensor not found!");
+        return false;
     }
 }
 

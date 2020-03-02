@@ -17,6 +17,13 @@ param (
 
 )
 
+begin {
+    if ($null -ne $target) {
+        $headerguard = $target -replace "\.|\\","_"
+        "#ifndef _$headerguard`n#define _$headerguard" | Out-File $target -Encoding ascii
+    }
+}
+
 process {
    
     foreach ($source in $files) {
@@ -42,28 +49,14 @@ process {
             Write-Output "Len: $len`n $out" 
         }
         else {
-            if (!(test-path $target)) {
-                new-item $target | Out-Null
-            }
-    
             $targetVar = $(Get-Item $source).Name.Replace('.', '_')      
-    
-            $found = $false
-
-            (get-content $target).foreach( {
-                    $line = $_ 
-                    if ($line -match $targetVar) {
-                        $line -replace "{[0-9A-Fx,].*}" , "{$out}; `n//Length:$len"
-                        $found = $true 
-                    }
-                    else {
-                        return $line
-                    }
-                }) | Set-Content $target	      
-            if (-not $found) {
-                Add-Content $target "`n const uint8_t $targetVar[] PROGMEM = {$out};`n//Length:$len"
-            }
+            Add-Content $target "`n const uint8_t $targetVar[] PROGMEM = {$out};`n//Length:$len"
             Write-Output "$source : $((Get-Item $source).Length) -> $len" 
         }
+    }
+}
+end {
+    if ($null -ne $target) {   
+        Add-Content $target "#endif //_$headerguard"
     }
 }

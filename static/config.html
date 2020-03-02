@@ -140,11 +140,14 @@
             setTimeout(function () {
                 $.get("/getWifiStatus", function (response) {
                     if (response.status == '3') {
-                        $('#ap').text(response.AP);
-                        $('#ip').text(response.IP);
+                        $('#stat').text(`Connected to ${response.AP} - ${response.IP}\(${response.Name}\)`)
+                    }
+                    else {
+                        $('#stat').text("Not Connected!!");
                     }
                 });
             }, 300);
+            
             setTimeout(function () {
                 $.get("/getChipInfo", function (response) {
                     var parentForm = $("#chipInfo");
@@ -380,10 +383,10 @@
     <footer class="footer">
         <div class="container">
             <div>
-                <span class="text-muted">Connected to</span>
-                <span class="text-muted" id='ap'></span>
-                <span class="text-muted"> IP Address </span>
-                <span class="text-muted" id='ip'></span>
+                <span class="text-muted" id='stat'></span>
+                <a href="/">
+                    <i class="fa fa-arrow-left"></i>
+                </a>
             </div>
             <div>
                 <span>Copyright: Adystech.com</span>
@@ -391,5 +394,4 @@
         </div>
     </footer>
 </body>
-
 </html>

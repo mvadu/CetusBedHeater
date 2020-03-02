@@ -40,7 +40,7 @@ public:
 class PWMConfig : public Serializable
 {
 public:
-    float minD, maxD, Temp;
+    uint8_t minD, maxD, Temp;
     size_t size() const override;
     bool serialize(char *dataOut) const override;
     bool deserialize(const char *dataIn) override;

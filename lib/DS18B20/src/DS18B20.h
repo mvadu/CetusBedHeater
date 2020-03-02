@@ -2,6 +2,8 @@
 //Author : mvadu@adystech.com
 
 #include <Arduino.h>
+#ifndef __DS18B20__
+#define __DS18B20__
 
 namespace CommandKeywords
 {
@@ -25,7 +27,9 @@ public:
   DS18B20(uint8_t data_pin, Resolution res = Resolution::bit_12);
 
   DS18B20(uint8_t power_pin, uint8_t data_pin, Resolution res = Resolution::bit_12);
-  
+
+  ///Return TRUE if sensor is found and can be read. FALSE if DS18B20 is not found.
+  bool begin();  
   //Primary read functions
   double getTemperature(void);
 
@@ -71,3 +75,4 @@ private:
     */
   int keepBus(int timeout);
 };
+#endif //__DS18B20__
