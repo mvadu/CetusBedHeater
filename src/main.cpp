@@ -1,5 +1,7 @@
 #include "ChipInfo.hpp"
 #include <DS18B20.h>
+#include <htu21d.h>
+#include <HX711.h>
 #include "config.hpp"
 #include "web_pages.h"
 #include "versionInfo.h"
@@ -20,19 +22,51 @@
 #include "soc/efuse_reg.h"
 #include <driver/gpio.h>
 #include <PidPwm.hpp>
+#include <time.h>
+#include <lwip/apps/sntp.h>
 
 /// region variables
+enum HeaterStatus
+{
+    TurnedOff,
+    Heating,
+    TimedOut
+};
+
 PidPwm *pid;
 DS18B20 *ds;
+HTU21D *htu;
+HX711 *hx;
+
+unsigned long heaterStartTs;
+unsigned long timeoutTs;
+long timeoutSec;
+time_t uptime;
+
+const uint8_t ds_power = 12;
+const uint8_t ds_data = 14;
+
+const uint8_t mosfet_Vcc = 25;
+const uint8_t mosfet_Gnd = 27;
+const uint8_t pwm_Pin = 26;
+
+const uint8_t htu_Vcc = 4;
+const uint8_t htu_Gnd = 16;
+const uint8_t htu_Scl = 17;
+const uint8_t htu_Sda = 5;
+
+const uint8_t hx711_Vcc = 23;
+const uint8_t hx711_Gnd = 19;
+const uint8_t hx711_Sda = 21;
+const uint8_t hx711_Sck = 22;
+
 WiFiConfig wifiConfig;
 PIDConfig pidConfig;
 PWMConfig pwmConfig;
+LoadCellConfig hxConfig;
 
 volatile RTC_NOINIT_ATTR bool resetConfig;
-unsigned long heaterStartTs;
-unsigned long timeoutTs;
-bool heaterTimedOut;
-float timeout;
+
 /////// Handle long press of the button to reset WiFi credentials
 const uint8_t resetBtn = 0; //GPIO0, do.it board has a button attached
 volatile long btnPressed;
@@ -51,6 +85,7 @@ const float criticalMax = 150;
 
 ChipInfo *chipInfo;
 WifiStatus wifiStatus = WifiStatus::Undefined;
+IPAddress gateway;
 AsyncWebServer server(80);
 ///
 
@@ -76,6 +111,11 @@ void getHeaterStatus(AsyncWebServerRequest *request);
 void heaterPower(AsyncWebServerRequest *request);
 void setConfig(AsyncWebServerRequest *request);
 void getConfig(AsyncWebServerRequest *request);
+void getAmbient(AsyncWebServerRequest *request);
+void getWeight(AsyncWebServerRequest *request);
+void getSensors(AsyncWebServerRequest *request);
+bool syncTime();
+time_t currentTime();
 
 void setup()
 {
@@ -125,13 +165,11 @@ void setup()
     }
 
     // powerup mosfet breakout
-    pinMode(25, PULLUP);
-    digitalWrite(25, HIGH);
-    pinMode(27, OUTPUT);
-    digitalWrite(27, LOW);
+    pinMode(mosfet_Vcc, PULLUP);
+    digitalWrite(mosfet_Vcc, HIGH);
+    pinMode(mosfet_Gnd, OUTPUT);
+    digitalWrite(mosfet_Gnd, LOW);
     delay(500);
-
-    ds = new DS18B20(12, 14, DS18B20::Resolution::bit_10);
 
     if (!ConfigManager::LoadConfig("PIDConfig", pidConfig))
         pidConfig.param = {2, 5, 0.5};
@@ -142,31 +180,93 @@ void setup()
         pwmConfig.minD = 0;
         pwmConfig.maxD = 100;
     }
+    ds = new DS18B20(ds_power, ds_data, DS18B20::Resolution::bit_10);
+    if (ds != NULL && !ds->begin())
+    {
+        delete ds;
+        ds = NULL;
+        Serial.println("DS18B20 NOT found!\n");
+    }
+    if (ds != NULL)
+    {
+        pid = new PidPwm(pwm_Pin, 2, 24000, 10, criticalMax, pidConfig.param, [&]() -> double {
+            //limit the bed to 100°C, if its more than that report NAN, PidPwm should cut off output bringing down the temp
+            double t = ds->getTemperature();
+            if (t > pwmConfig.Temp)
+                return NAN;
+            //hard off if we are already at the set Target
+            if (isnan(targetTemp) || t > targetTemp)
+                return NAN;
+            return t;
+        });
+        pid->setLimitsPercentage(pwmConfig.minD, pwmConfig.maxD);
+        pid->setTarget(targetTemp);
+        pid->setComputeInterval(1000);
+    }
+    // powerup HTU21D breakout
 
-    pid = new PidPwm(26, 2, 24000, 10, criticalMax, pidConfig.param, [&]() -> double {
-        //limit the bed to 100°C, if its more than that report NAN, PidPwm should cut off output bringing down the temp
-        double t = ds->getTemperature();
-        if (t > pwmConfig.Temp)
-            return NAN;
-        //hard off if we are already at the set Target
-        if (isnan(targetTemp) || t > targetTemp)
-            return NAN;
-        return t;
-    });
-    pid->setLimits(pwmConfig.minD, pwmConfig.maxD);
-    pid->setTarget(targetTemp);
-    pid->setComputeInterval(1000);
+    pinMode(htu_Vcc, OUTPUT);
+    digitalWrite(htu_Vcc, HIGH);
+    pinMode(htu_Gnd, OUTPUT);
+    digitalWrite(htu_Gnd, LOW);
+    delay(1000);
+    gpio_pad_select_gpio(htu_Sda);
+    gpio_pad_select_gpio(htu_Scl);
+
+    htu = new HTU21D(false);
+    if (htu != NULL && htu->begin(htu_Sda, htu_Scl))
+    {
+        Serial.println("HTU21D found!\n");
+        Serial.printf("Temp:%f, Humid:%f \n", htu->getTemperature(), htu->getHumidity());
+    }
+    else
+    {
+        delete htu;
+        htu = NULL;
+        Serial.println("HTU21D NOT found!\n");
+    }
+
+    if (!ConfigManager::LoadConfig("LoadCellConfig", hxConfig))
+    {
+        //TODO: calibrated value
+        hxConfig.calibValuePerGram = 1;
+    }
+
+    pinMode(hx711_Vcc, OUTPUT);
+    digitalWrite(hx711_Vcc, HIGH);
+    pinMode(hx711_Gnd, OUTPUT);
+    digitalWrite(hx711_Gnd, LOW);
+
+    delay(500);
+    hx = new HX711();
+    if (hx != NULL && hx->begin(hx711_Sck, hx711_Sda))
+    {
+        Serial.println("HX711 found!\n");
+        Serial.printf("Load Cell Output:%lu \n", hx->getRawReading());
+        hx->tare();
+        Serial.printf("Load Cell Output after tare:%lu \n", hx->getRawReading());
+    }
+    else
+    {
+        delete hx;
+        hx = NULL;
+        Serial.println("HX711 NOT found!\n");
+    }
 }
 
 void loop()
 {
-    yield();
-    if (pid->isRunning() && !heaterTimedOut && millis() > timeoutTs)
+    // if (hx != NULL)
+    // {
+    //     Serial.printf("%lu\n", hx->getRawReading());
+    // }
+
+    if (pid != NULL && currentTime() > timeoutTs)
     {
         turnOffHeater();
-        heaterTimedOut = true;
     }
-    delay(1000);
+    yield();
+    delay(500);
 }
 
 void SetupAccessPoint()
@@ -180,7 +280,7 @@ void SetupAccessPoint()
     });
 
     server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
-              Serial.printf("client host: %s\n", request->host().c_str());
+              //Serial.printf("client host: %s\n", request->host().c_str());
               if (downcaseAndRemoveLocalPrefix(request->host()) != downcaseAndRemoveLocalPrefix(hostName))
               {
                   onNotFound(request);
@@ -293,18 +393,19 @@ bool startMainserver()
         serveStatic(request, config_html, sizeof(config_html));
     });
 
-    server.on("/upload", HTTP_POST, [](AsyncWebServerRequest *request) {
-        StreamString str;
-        Update.printError(str);
-        AsyncResponseStream *response = request->beginResponseStream("application/json");
-        response->addHeader("Connection", "close");
-        response->printf("{\"UpdateStatus\":%d,\"Message\":\"%s\"}",
-                         !Update.hasError(), Update.hasError() ? str.c_str() : "Success");
-        request->send(response);
-        delay(1000);
-        ESP.restart();
-    },
-              onUpload);
+    server.on(
+        "/upload", HTTP_POST, [](AsyncWebServerRequest *request) {
+            StreamString str;
+            Update.printError(str);
+            AsyncResponseStream *response = request->beginResponseStream("application/json");
+            response->addHeader("Connection", "close");
+            response->printf("{\"UpdateStatus\":%d,\"Message\":\"%s\"}",
+                             !Update.hasError(), Update.hasError() ? str.c_str() : "Success");
+            request->send(response);
+            delay(1000);
+            ESP.restart();
+        },
+        onUpload);
 
     server.on("/getWifiStatus", HTTP_GET, [](AsyncWebServerRequest *request) {
         getWifiStatus(request);
@@ -345,6 +446,18 @@ bool startMainserver()
 
     server.onNotFound([](AsyncWebServerRequest *request) {
         onNotFound(request);
+    });
+
+    server.on("/getAmbient", HTTP_GET, [](AsyncWebServerRequest *request) {
+        getAmbient(request);
+    });
+
+    server.on("/getWeight", HTTP_GET, [](AsyncWebServerRequest *request) {
+        getWeight(request);
+    });
+
+    server.on("/getSensors", HTTP_GET, [](AsyncWebServerRequest *request) {
+        getSensors(request);
     });
 
     DefaultHeaders::Instance().addHeader("server", "ESP32");
@@ -424,38 +537,12 @@ void wifiConnected()
     if (!wifiConfig.valid)
         wifiConfig.valid = true;
     else
+    {
+        syncTime();
         startMainserver();
+    }
     xTimerStop(timerFadeLed, 0);
     ledcWrite(1, 16000);
-}
-
-String downcaseAndRemoveLocalPrefix(const String hostName)
-{
-    String host = hostName;
-    host.toLowerCase();
-    host.replace(".local", "");
-    return host;
-}
-
-void onNotFound(AsyncWebServerRequest *request)
-{
-    StreamString s;
-    Serial.printf("Host: %s", request->host().c_str());
-    if (downcaseAndRemoveLocalPrefix(request->host()) != hostName)
-    {
-        s.printf("http://%s.local/", hostName.c_str());
-        request->redirect(s);
-    }
-    else
-        request->send(404); //Sends 404 File Not Found
-}
-
-void serveStatic(AsyncWebServerRequest *request, const uint8_t *page, size_t size)
-{
-    AsyncWebServerResponse *response = request->beginResponse_P(200, "text/html", page, size);
-    response->addHeader("Content-Encoding", "gzip");
-    response->addHeader("Cache-Control", "max-age=86400");
-    request->send(response);
 }
 
 void WiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info)
@@ -464,7 +551,9 @@ void WiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info)
     switch (event)
     {
     case SYSTEM_EVENT_STA_GOT_IP:
-        Serial.printf("WiFi connected IP address: %s duration %lu\n", WiFi.localIP().toString().c_str(), millis());
+        gateway = IPAddress(info.got_ip.ip_info.gw.addr);
+        Serial.printf("WiFi connected IP address: %s ; From: %s, duration %lu\n",
+                      WiFi.localIP().toString().c_str(), gateway.toString().c_str(), millis());
         wifiConnected();
         break;
     case SYSTEM_EVENT_STA_START:
@@ -510,6 +599,35 @@ wl_status_t initWifiConnection()
     return WiFi.begin(wifiConfig.ssid.c_str(), wifiConfig.password.c_str());
 }
 
+String downcaseAndRemoveLocalPrefix(const String hostName)
+{
+    String host = hostName;
+    host.toLowerCase();
+    host.replace(".local", "");
+    return host;
+}
+
+void onNotFound(AsyncWebServerRequest *request)
+{
+    StreamString s;
+    //Serial.printf("Host: %s", request->host().c_str());
+    if (downcaseAndRemoveLocalPrefix(request->host()) != hostName)
+    {
+        s.printf("http://%s.local/", hostName.c_str());
+        request->redirect(s);
+    }
+    else
+        request->send(404); //Sends 404 File Not Found
+}
+
+void serveStatic(AsyncWebServerRequest *request, const uint8_t *page, size_t size)
+{
+    AsyncWebServerResponse *response = request->beginResponse_P(200, "text/html", page, size);
+    response->addHeader("Content-Encoding", "gzip");
+    response->addHeader("Cache-Control", "max-age=86400");
+    request->send(response);
+}
+
 void getWifiStatus(AsyncWebServerRequest *request)
 {
     AsyncResponseStream *response = request->beginResponseStream("application/json");
@@ -518,7 +636,8 @@ void getWifiStatus(AsyncWebServerRequest *request)
     response->printf("{\"status\":%d", wifiStatus);
     if (wifiStatus == WifiStatus::Connected)
     {
-        response->printf(",\"IP\":\"%s\",\"AP\":\"%s\"", WiFi.localIP().toString().c_str(), wifiConfig.ssid.c_str());
+        response->printf(",\"IP\":\"%s\",\"AP\":\"%s\",\"Name\":\"%s\"",
+                         WiFi.localIP().toString().c_str(), wifiConfig.ssid.c_str(), wifiConfig.clientName.c_str());
     }
     response->printf("}");
     request->send(response);
@@ -539,8 +658,8 @@ void getChipInfo(AsyncWebServerRequest *request)
     response->printf("\"featureBLE\":%d,", chipInfo->featureBLE);
     response->printf("\"featureWiFi\":%d,", chipInfo->featureWiFi);
     response->printf("\"internalFlash\":%d,", chipInfo->internalFlash);
-    response->printf("\"flashSize\":%d}", chipInfo->flashSize);
-
+    response->printf("\"flashSize\":%d,", chipInfo->flashSize);
+    response->printf("\"UpTime\":%lu}", uptime);
     request->send(response);
 }
 
@@ -575,16 +694,22 @@ void onUpload(AsyncWebServerRequest *request, String filename, size_t index, uin
 void getHeaterStatus(AsyncWebServerRequest *request)
 {
     AsyncResponseStream *response = request->beginResponseStream("application/json");
-    response->addHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-    response->addHeader("Expires", "-1");
-    if (pid->isRunning())
+    response->addHeader("Cache-Control", "max-age=5");
+    if (ds != NULL && pid != NULL)
     {
-        response->printf("{\"Heater\":true,\"Target\":%.3f,\"Current\":%.3f,\"DutyCycle\":%.3f,\"RunTime\":%lu,\"Timeout\":%lu}",
-                         pid->getTarget(), ds->getTemperature(), pid->getOutputDS(), (millis() - heaterStartTs), (timeoutTs - millis()));
+        if (pid->isRunning())
+        {
+            response->printf("{\"Heater\":true,\"Target\":%.3f,\"Current\":%.3f,\"DutyCycle\":%.3f,\"StartTime\":%lu,\"Timeout\":%lu}",
+                             pid->getTarget(), ds->getTemperature(), pid->getOutputDS(), heaterStartTs, timeoutSec);
+        }
+        else
+        {
+            response->printf("{\"Heater\":false,\"Current\":%.3f}", ds->getTemperature());
+        }
     }
     else
     {
-        response->printf("{\"Heater\":false,\"Current\":%.3f}", ds->getTemperature());
+        response->printf("{\"Heater\":false,\"Current\":null}");
     }
     request->send(response);
 }
@@ -597,7 +722,7 @@ void setHeaterTemperature(AsyncWebServerRequest *request)
     if (request->hasParam("temp", true))
     {
         targetTemp = atof(request->getParam("temp", true)->value().c_str());
-        if (pid->setTarget(targetTemp))
+        if (pid != NULL && pid->setTarget(targetTemp))
             response->print("OK");
         else
             response->print("Invalid");
@@ -614,12 +739,13 @@ void setTimeout(AsyncWebServerRequest *request)
     AsyncResponseStream *response = request->beginResponseStream("text/plain");
     response->addHeader("Cache-Control", "no-cache, no-store, must-revalidate");
     response->addHeader("Expires", "-1");
-    if (request->hasParam("timeout", true))
+    if (request->hasParam("timeoutSec", true))
     {
-        timeout = atof(request->getParam("timeout", true)->value().c_str());
-        if (timeout > 0)
+        long t = atol(request->getParam("timeoutSec", true)->value().c_str());
+        if (t > 0)
         {
-            timeoutTs = millis() + (timeout * 3600.0 * 1000);
+            timeoutSec += t;
+            timeoutTs += currentTime() + timeoutSec;
             response->print("OK");
         }
         else
@@ -642,14 +768,13 @@ void heaterPower(AsyncWebServerRequest *request)
         Serial.print(request->getParam("turnOn", true)->value());
         if (request->getParam("turnOn", true)->value() == "1")
         {
-            if (pid->begin())
+            if (pid != NULL && pid->begin())
             {
-                heaterStartTs = millis();
-                //automatically turf off after 2 hours
-                timeout = 2;
-                timeoutTs = millis() + (timeout * 3600.0 * 1000);
+                heaterStartTs = currentTime();
+                //automatically turf off after 120 minutes
+                timeoutSec = 120 * 60;
+                timeoutTs = currentTime() + timeoutSec;
                 response->print("OK");
-                heaterTimedOut = false;
             }
             else
                 response->print("Invalid");
@@ -670,9 +795,12 @@ void heaterPower(AsyncWebServerRequest *request)
 
 void turnOffHeater()
 {
-    pid->shutdown();
-    heaterStartTs = 0;
-    timeoutTs = 0;
+    if (pid != NULL)
+    {
+        pid->shutdown();
+        heaterStartTs = 0;
+        timeoutTs = 0;
+    }
 }
 
 void setConfig(AsyncWebServerRequest *request)
@@ -690,7 +818,8 @@ void setConfig(AsyncWebServerRequest *request)
                 pidConfig.param.proportionalGain = atof(request->getParam("p", true)->value().c_str());
                 pidConfig.param.integralGain = atof(request->getParam("i", true)->value().c_str());
                 pidConfig.param.derivativeGain = atof(request->getParam("d", true)->value().c_str());
-                pid->setTuningParams(pidConfig.param);
+                if (pid != NULL)
+                    pid->setTuningParams(pidConfig.param);
                 if (ConfigManager::SaveConfig(pidConfig, "PIDConfig"))
                     response->print("OK");
                 else
@@ -706,14 +835,17 @@ void setConfig(AsyncWebServerRequest *request)
             if (request->hasParam("Temp", true) && request->hasParam("maxD", true) && request->hasParam("minD", true))
             {
 
-                pwmConfig.Temp = atof(request->getParam("Temp", true)->value().c_str());
-                pwmConfig.maxD = atof(request->getParam("maxD", true)->value().c_str());
-                pwmConfig.minD = atof(request->getParam("minD", true)->value().c_str());
+                pwmConfig.Temp = atoi(request->getParam("Temp", true)->value().c_str());
+                pwmConfig.maxD = atoi(request->getParam("maxD", true)->value().c_str());
+                pwmConfig.minD = atoi(request->getParam("minD", true)->value().c_str());
                 if (pwmConfig.maxD > pwmConfig.minD && pwmConfig.maxD <= 100 && pwmConfig.minD >= 0 && pwmConfig.Temp < criticalMax)
                 {
-                    pid->setLimits(pwmConfig.minD, pwmConfig.maxD);
-                    if (pwmConfig.Temp < pid->getTarget())
-                        pid->setTarget(pwmConfig.Temp);
+                    if (pid != NULL)
+                    {
+                        pid->setLimitsPercentage(pwmConfig.minD, pwmConfig.maxD);
+                        if (pwmConfig.Temp < pid->getTarget())
+                            pid->setTarget(pwmConfig.Temp);
+                    }
                     if (ConfigManager::SaveConfig(pwmConfig, "PWMConfig"))
                         response->print("OK");
                     else
@@ -747,6 +879,22 @@ void setConfig(AsyncWebServerRequest *request)
                 response->print("Invalid Param");
             }
         }
+        else if (request->getParam("config", true)->value() == "LoadCellParams")
+        {
+            if (request->hasParam("calibValuePerGram", true))
+            {
+
+                hxConfig.calibValuePerGram = atol(request->getParam("calibValuePerGram", true)->value().c_str());
+                if (ConfigManager::SaveConfig(hxConfig, "LoadCellConfig"))
+                    response->print("OK");
+                else
+                    response->print("Unable to Save");
+            }
+            else
+            {
+                response->print("Invalid Param");
+            }
+        }
         else
         {
             response->printf("Invalid config:%s", request->getParam("config")->value().c_str());
@@ -773,11 +921,16 @@ void getConfig(AsyncWebServerRequest *request)
         }
         else if (request->getParam("config")->value() == "PwmParams")
         {
-            response->printf("{\"Temp\":%f,\"maxD\":%f,\"minD\":%f}",
+            response->printf("{\"Temp\":%u,\"maxD\":%u,\"minD\":%u}",
                              pwmConfig.Temp, pwmConfig.maxD, pwmConfig.minD);
         }
         else if (request->getParam("config")->value() == "NetParams")
         {
+        }
+        else if (request->getParam("config")->value() == "LoadCellParams")
+        {
+            response->printf("{\"calibValuePerGram\":%lu}",
+                             hxConfig.calibValuePerGram);
         }
         else
         {
@@ -789,4 +942,89 @@ void getConfig(AsyncWebServerRequest *request)
         response->print("Missing Param:config");
     }
     request->send(response);
+}
+
+void getAmbient(AsyncWebServerRequest *request)
+{
+    AsyncResponseStream *response = request->beginResponseStream("application/json");
+    response->addHeader("Cache-Control", "max-age=10");
+    if (htu != NULL)
+    {
+        response->printf("{\"Temperature\":%.2f,\"Humidity\":%.2f}", htu->getTemperature(), htu->getHumidity());
+    }
+    else
+    {
+        response->printf("{\"Temperature\":null,\"Humidity\":null}");
+    }
+    request->send(response);
+}
+
+void getWeight(AsyncWebServerRequest *request)
+{
+    AsyncResponseStream *response = request->beginResponseStream("application/json");
+    response->addHeader("Cache-Control", "max-age=10");
+    if (hx != NULL)
+    {
+        unsigned long reading = hx->getRawReading();
+        double weight = reading / hxConfig.calibValuePerGram;
+        response->printf("{\"Weight\":%.2f,\"LoadCellReading\":%ld}", weight, reading);
+    }
+    else
+    {
+        response->printf("{\"Weight\":null,\"LoadCellReading\":null}");
+    }
+    request->send(response);
+}
+
+void getSensors(AsyncWebServerRequest *request)
+{
+    AsyncResponseStream *response = request->beginResponseStream("application/json");
+    response->addHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    response->addHeader("Expires", "-1");
+    response->printf("{\"bedHeater\":%s,\"ambientTemp\":%s,\"weighingScale\":%s}",
+                     ds != NULL ? "true" : "false", htu != NULL ? "true" : "false", hx != NULL ? "true" : "false");
+    request->send(response);
+}
+
+//Syncs with ntp server
+bool syncTime()
+{
+    const char *sntpServer = gateway.toString().c_str(); //"pool.ntp.org";
+    const long minEpoch = 1577836800;                    //epoch for 1/1/2020
+
+    Serial.printf("Default Time %ld - millis: %lu\n", uptime, millis());
+
+    time(&uptime);
+
+    if (uptime < minEpoch)
+    {
+        sntp_setoperatingmode(SNTP_OPMODE_POLL);
+        sntp_setservername(0, (char *)sntpServer);
+        sntp_init();
+        // wait for time to be set
+        unsigned int t = 5 * 1000;
+        unsigned int s = millis();
+        while (uptime < minEpoch && (t > millis() - s))
+        {
+            delay(5);
+            time(&uptime);
+        }
+        Serial.printf("Time received %ld - millis: %lu\n", uptime, millis());
+    }
+
+    if (uptime > minEpoch)
+    {
+        uptime -= millis() / 1000;
+        return true;
+    }
+    else
+    {
+        uptime = minEpoch;
+        return false;
+    }
+}
+
+time_t currentTime()
+{
+    return uptime + millis() / 1000;
 }

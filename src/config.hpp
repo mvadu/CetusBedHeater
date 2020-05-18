@@ -40,7 +40,7 @@ public:
 class PWMConfig : public Serializable
 {
 public:
-    float minD, maxD, Temp;
+    uint8_t minD, maxD, Temp;
     size_t size() const override;
     bool serialize(char *dataOut) const override;
     bool deserialize(const char *dataIn) override;
@@ -53,4 +53,26 @@ enum WifiStatus
     Connecting = 2,
     Connected = 3,
     ConnectFailed = 4
+};
+
+class LoadCellConfig : public Serializable
+{
+public:
+    unsigned long calibValuePerGram;
+    size_t size() const override;
+    bool serialize(char *dataOut) const override;
+    bool deserialize(const char *dataIn) override;
+};
+
+class SensorConfig : public Serializable
+{
+public:
+    size_t size() const override;
+    bool serialize(char *dataOut) const override;
+    bool deserialize(const char *dataIn) override;
+
+    uint8_t ds_power, ds_data;
+    uint8_t mosfet_Vcc, mosfet_Gnd, pwm_Pin;
+    uint8_t htu_Vcc, htu_Gnd, htu_Scl, htu_Sda;
+    uint8_t hx711_Vcc, hx711_Sda, hx711_Sck;
 };
