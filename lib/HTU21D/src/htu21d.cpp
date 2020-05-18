@@ -138,10 +138,7 @@ float HTU21D::readHumidity()
 
 float HTU21D::getTemperature()
 {
-    if (isnan(_temp))
-    {
-        refreshReading();
-    }
+    refreshReading();
     return _temp;
 }
 
@@ -190,7 +187,8 @@ bool HTU21D::ValidCyclicRedundancyCheck(uint16_t data, uint8_t crc)
 
 float HTU21D::getDewPoint()
 {
-    if(!_calc) return NAN;
+    if (!_calc)
+        return NAN;
 
     if (isnan(_dewpoint))
     {
@@ -228,7 +226,8 @@ float HTU21D::calculateDewPoint()
 
 float HTU21D::getHeatIndex()
 {
-    if(!_calc) return NAN;
+    if (!_calc)
+        return NAN;
     if (isnan(_heatindex))
     {
         refreshReading();

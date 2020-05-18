@@ -20,7 +20,7 @@ DS18B20::DS18B20(uint8_t data_pin, DS18B20::Resolution res)
 {
     _data_pin = (gpio_num_t)data_pin;
     _res = res;
-    //some of the pads on ESP32 are muliplexed to do more than one act. If we want only GPIO then we need to ask.
+    //some of the pads on ESP32 are multiplexed to do more than one act. If we want only GPIO then we need to ask.
     gpio_pad_select_gpio(_data_pin);
     gpio_set_direction(_data_pin, gpio_mode_t::GPIO_MODE_INPUT_OUTPUT);
     gpio_pullup_en(_data_pin);

@@ -185,3 +185,83 @@ bool PWMConfig::deserialize(const char *dataIn)
     p += sizeof(minD);
     return true;
 }
+
+size_t LoadCellConfig::size() const
+{
+    return sizeof(this->calibValuePerGram);
+}
+
+bool LoadCellConfig::serialize(char *dataOut) const
+{
+    char *p = dataOut;
+    memcpy(p, &calibValuePerGram, sizeof(calibValuePerGram));
+    return true;
+}
+
+bool LoadCellConfig::deserialize(const char *dataIn)
+{
+    const char *p = dataIn;
+    memcpy(&calibValuePerGram, p, sizeof(calibValuePerGram));
+    return true;
+}
+
+size_t SensorConfig::size() const
+{
+    return sizeof(SensorConfig);
+}
+
+bool SensorConfig::serialize(char *dataOut) const
+{
+    char *p = dataOut;
+    memcpy(p, &ds_power, sizeof(uint8_t));
+    memcpy(p, &ds_data, sizeof(uint8_t));
+
+    memcpy(p, &mosfet_Vcc, sizeof(uint8_t));
+    memcpy(p, &mosfet_Gnd, sizeof(uint8_t));
+    memcpy(p, &pwm_Pin, sizeof(uint8_t));
+
+    memcpy(p, &htu_Vcc, sizeof(uint8_t));
+    memcpy(p, &htu_Gnd, sizeof(uint8_t));
+    memcpy(p, &htu_Scl, sizeof(uint8_t));
+    memcpy(p, &htu_Sda, sizeof(uint8_t));
+
+    memcpy(p, &hx711_Vcc, sizeof(uint8_t));
+    memcpy(p, &hx711_Sda, sizeof(uint8_t));
+    memcpy(p, &hx711_Sck, sizeof(uint8_t));
+
+    return true;
+}
+
+bool SensorConfig::deserialize(const char *dataIn)
+{
+    const char *p = dataIn;
+    memcpy(&ds_power, p, sizeof(uint8_t));
+    p += sizeof(uint8_t);
+    memcpy(&ds_data, p, sizeof(uint8_t));
+    p += sizeof(uint8_t);
+
+    memcpy(&mosfet_Vcc, p, sizeof(uint8_t));
+    p += sizeof(uint8_t);
+    memcpy(&mosfet_Gnd, p, sizeof(uint8_t));
+    p += sizeof(uint8_t);
+    memcpy(&pwm_Pin, p, sizeof(uint8_t));
+    p += sizeof(uint8_t);
+
+    memcpy(&htu_Vcc, p, sizeof(uint8_t));
+    p += sizeof(uint8_t);
+    memcpy(&htu_Gnd, p, sizeof(uint8_t));
+    p += sizeof(uint8_t);
+    memcpy(&htu_Scl, p, sizeof(uint8_t));
+    p += sizeof(uint8_t);
+    memcpy(&htu_Sda, p, sizeof(uint8_t));
+    p += sizeof(uint8_t);
+
+    memcpy(&hx711_Vcc, p, sizeof(uint8_t));
+    p += sizeof(uint8_t);
+    memcpy(&hx711_Sda, p, sizeof(uint8_t));
+    p += sizeof(uint8_t);
+    memcpy(&hx711_Sck, p, sizeof(uint8_t));
+    p += sizeof(uint8_t);
+
+    return true;
+}

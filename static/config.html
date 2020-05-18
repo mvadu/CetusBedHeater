@@ -147,7 +147,7 @@
                     }
                 });
             }, 300);
-            
+
             setTimeout(function () {
                 $.get("/getChipInfo", function (response) {
                     var parentForm = $("#chipInfo");
@@ -157,6 +157,9 @@
                         });
                         var label = $("<label>", { class: "label-text" }).text(key);
                         var val = $("<span>", { class: "value-text" }).text(response[key]);
+                        if (key.match(/Time/) && !isNaN(response[key])) {
+                            val.text(new Date(response[key] * 1000).toLocaleString());
+                        }
                         row.append(label, val);
                         parentForm.append(row);
                     });
@@ -219,6 +222,9 @@
                 $('#progressBar').css('width', percent + '%');
                 $('#progressBar').html(percent + '%');
             };
+            $("#restart").on("click", function () {
+                $.post("/restart");
+            });
         });
     </script>
     <title>Cetus Bed Heater Configurations</title>
@@ -328,6 +334,25 @@
             <div class="row centered">
                 <div class="card-title">
                     <div class="header-link">
+                        <a data-toggle="collapse" href="#LoadCellParams" class="card-title mx-3">
+                            Loadcell (XH711) Parameters
+                        </a></div>
+                    <div id="LoadCellParams" class="form-group collapse params">
+                        <div class="input-group">
+                            <div class="input-group-prepend">
+                                <label class="input-group-text">HX711 Reading changes (per gram)</label>
+                            </div>
+                            <input id='calibValuePerGram' type="number" step='1' class="form-control param" />
+                        </div>
+                        <div class="input-group">
+                            <button type="button" class='btn  btn-outline-secondary'>Save</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="row centered">
+                <div class="card-title">
+                    <div class="header-link">
                         <a data-toggle="collapse" href="#updateFirmware" class="card-title mx-3">
                             Firmware Update
                         </a></div>
@@ -394,4 +419,5 @@
         </div>
     </footer>
 </body>
+
 </html>

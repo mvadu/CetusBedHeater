@@ -15,6 +15,8 @@
     <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/js/bootstrap.min.js"
         integrity="sha384-ChfqqxuZUCnJSK3+MXmPNIyE6ZbWh2IMqE241rYiqJxyMiZ6OW/JmZQ5stwEULTy"
         crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/2.8.0-rc.1/Chart.bundle.js"></script>
+
     <style>
         h1 {
             text-align: center;
@@ -31,6 +33,11 @@
         }
 
         body {
+            background-color: rgb(39, 38, 38);
+        }
+
+        .wrapper {
+            min-height: 100vh;
             margin-bottom: 60px;
             display: flex;
             align-items: center;
@@ -45,12 +52,25 @@
             min-height: 100%;
         }
 
-        .footer {
-            position: absolute;
+        header {
+            left: 0;
             bottom: 0;
             width: 100%;
-            height: 60px;
-            line-height: 60px;
+            padding-bottom: 9px;
+            margin: 40px 0 20px;
+            border-bottom: 1px solid #eee;
+            color: #007bff;
+        }
+
+        footer {
+            left: 0;
+            bottom: 0;
+            width: 100%;
+            clear: both;
+            font-size: 16;
+            text-rendering: auto;
+            position: fixed;
+            background-color: rgb(39, 38, 38);
         }
 
         .link {
@@ -71,7 +91,7 @@
         .narrow {
             width: 50px;
         }
-       
+
         .section {
             border: 1px solid #ced4da;
             border-radius: .25rem;
@@ -106,8 +126,6 @@
         }
     </style>
     <script language='javascript'>
-
-
         $(document).ready(function () {
             function secondsTimeSpanToHMS(s) {
                 var h = Math.floor(s / 3600); //Get whole hours
@@ -123,16 +141,8 @@
                     return;
                 $.ajax({
                     method: "GET",
-                    url: '/getHeaterStatus',
-                    cache: "false"
+                    url: '/getHeaterStatus'
                 }).done(function (response) {
-                    if (response.Current == null) {
-                        $('#bedHeater').empty();
-                        $('#bedHeater').append($("<span>", { class: "error-text" }).text("Bed Heater Not available!!"));
-                        setTimeout(function () { clearInterval(heaterTimer); }, 100);
-                        $('#bedHeater').collapse('hide');
-                        return;
-                    }
                     document.body.dataset.heater = response.Heater;
                     $('#current_temp').text(`${response.Current} °C`);
                     if (response.Heater) {
@@ -165,9 +175,6 @@
                         $(".powered.off").show();
                         $("#toggle strong").text("Turn ON");
                     }
-                }).fail(function (jqXHR, textStatus, error) {
-                    // Handle error here
-                    $('#current_temp').html("<i class='fas fa-fire'></i>");
                 });
             };
 
@@ -176,25 +183,24 @@
                     return;
                 $.ajax({
                     method: "GET",
-                    url: '/getAmbient',
-                    cache: "false"
+                    url: '/getAmbient'
                 }).done(function (response) {
-                    if (response.Temperature == null) {
-                        $('#ambientTemp').empty();
-                        $('#ambientTemp').append($("<span>", { class: "error-text" }).text("Ambient Temperature Not available!!"));
-                        setTimeout(function () { clearInterval(ambientTimer); }, 100);
-                        $('#ambientTemp').collapse('hide');
-                        return;
-                    }
-                    document.body.dataset.heater = response.Heater;
                     $('#temperature').text(`${response.Temperature} °C`);
                     $('#humidity').text(`${response.Humidity} %`);
-                }).fail(function (jqXHR, textStatus, error) {
-                    // Handle error here
-                    $('#temperature').html("<i class='fas fa-fire'></i>");
                 });
             }
 
+            function getWeight() {
+                if ($('#weighingScale').is(":hidden"))
+                    return;
+                $.ajax({
+                    method: "GET",
+                    url: '/getWeight'
+                }).done(function (response) {
+                    $('#Weight').text(`${response.Weight} g`);
+                    $('#LoadCellReading').text(response.LoadCellReading);
+                });
+            }
             setTimeout(function () {
                 $.get("/getWifiStatus", function (response) {
                     if (response.status == '3') {
@@ -204,15 +210,82 @@
                         $('#stat').text("Not Connected!!");
                     }
                 });
+                $.get("/getSensors", function (response) {
+                    let hue = Math.random() * 360;
+                    if (response.bedHeater) {
+                        $('#bedHeater .available').show();
+                        $('#bedHeater .unavailable').hide();
+                        getHeaterStatus();
+                        heaterTimer = setInterval(getHeaterStatus, 1500);
+                        let d = addDataSet('Bed Temperature', 'hsla(' + hue + ', 75%, 50%, 0.5)',function () {
+                            let ds = this;
+                            $.ajax({
+                                method: "GET",
+                                url: '/getHeaterStatus'
+                            }).done(function (response) {
+                                ds.data.push({
+                                    t: new Date(),
+                                    y: response.Current
+                                });
+                            });
+                        });
+                        hue += 222.5;
+                    } else {
+                        $('#bedHeater .available').hide();
+                        $('#bedHeater .unavailable').show();
+                        $('#bedHeater').hide();
+                    }
+                    if (response.ambientTemp) {
+                        $('#ambientTemp .available').show();
+                        $('#ambientTemp .unavailable').hide();
+                        getAmbient();
+                        ambientTimer = setInterval(getAmbient, 5000);
+                        let d = addDataSet('Ambient Temperature', 'hsla(' + hue + ', 75%, 50%, 0.5)',function () {
+                            let ds = this;
+                            $.ajax({
+                                method: "GET",
+                                url: '/getAmbient'
+                            }).done(function (response) {
+                                ds.data.push({
+                                    t: new Date(),
+                                    y: response.Temperature
+                                });
+                            });
+                        });
+                        hue += 222.5;
+                    } else {
+                        $('#ambientTemp .available').hide();
+                        $('#ambientTemp .unavailable').show();
+                        $('#ambientTemp').collapse('hide');
+                    }
+                    if (response.weighingScale) {
+                        $('#weighingScale .available').show();
+                        $('#weighingScale .unavailable').hide();
+                        getWeight();
+                        weightTimer = setInterval(getWeight, 10000);
+                        let d = addDataSet('Spool Weight', 'hsla(' + hue + ', 75%, 50%, 0.5)', function () {
+                            let ds = this;
+                            $.ajax({
+                                method: "GET",
+                                url: '/getWeight'
+                            }).done(function (response) {
+                                ds.data.push({
+                                    t: new Date(),
+                                    y: response.Weight
+                                });
+                            });
+                        });
+                        hue += 222.5;
+                    } else {
+                        $('#weighingScale .available').hide();
+                        $('#weighingScale .unavailable').show();
+                        $('#weighingScale').collapse('hide');
+                    }
+                });
             }, 500);
 
-            heaterTimer = setInterval(getHeaterStatus, 1500);
-            ambientTimer = setInterval(getAmbient, 5000);
-
-            setTimeout(function () {
-                getHeaterStatus();
-                getAmbient()
-            }, 100);
+            setupChart();
+            setInterval(updateChart, 30000);
 
             $("#toggle").on("click", function () {
                 $.post("/heaterPower", { turnOn: (document.body.dataset.heater == "true" ? 0 : 1) });
@@ -227,142 +300,268 @@
             });
 
             $("#settimeout").click(function () {
-                $.post("/setTimeout", { timeout: $('#timeout').val() }, function (response) {
+                $.post("/setTimeout", { timeoutSec: $('#timeout').val() * 60 }, function (response) {
                     if (response != 'OK') {
                         alert("Invalid timeout");
                     }
                 });
             });
-
         });
+        function setupChart() {
+            var chartConfig = {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: []
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        xAxes: [{
+                            type: 'time',
+                            distribution: 'linear',
+                            time: {
+                                displayFormats: {
+                                    minute: 'h:mm'
+                                }
+                            }
+                        }],
+                        yAxes: [{
+                            type: 'linear',
+                            ticks: {
+                                suggestedMin: 25,
+                                suggestedMax: 100
+                            },
+                            display: true,
+                            scaleLabel: {
+                                display: true,
+                                labelString: 'Value'
+                            }
+                        }]
+                    }
+                }
+            };
+            //round to nearest 5 minute
+            var start = new Date(Math.round((new Date()).getTime() / 300000) * 300000 - 300000);
 
+            for (i = 0; i < 30; i++) {
+                var ts = new Date(start.getTime() + i * 60000);
+                chartConfig.data.labels.push(ts);
+            }
+            window.chartConfig = chartConfig;
+            window.sensorChart = new Chart(document.getElementById("chartCanvas").getContext('2d'), window.chartConfig);
+            setTimeout(updateChart,500);
+        };
+
+        function updateChart() {
+            window.chartConfig.data.datasets.forEach(set => set.refresh());
+            let last = chartConfig.data.labels[chartConfig.data.labels.length - 10];
+            if (last < (new Date()) + 600000) {
+                let newLast = (new Date()) + 600000;
+                for (i = last; i >= newLast; i += 60000)
+                    window.chartConfig.data.labels.push(new Date(i));
+            }
+            window.sensorChart.update();
+        }
+
+        function addDataSet(sensor, color,refreshCallback) {
+            var d = {
+                label: sensor,
+                backgroundColor: color,
+                borderColor: color,
+                fill: false,
+                data: []
+            };
+            d.refresh = refreshCallback;
+            window.chartConfig.data.datasets.push(d);
+            return d;
+        };
     </script>
     <title>Cetus Utilities</title>
 </head>
 
 <body>
-    <main role="main" class="container-fluid">
-        <h1 class="col-sm-8">Cetus 3d printer Utilities</h1>
-        <div class="card-group col-sm-8">
-            <div class="card text-white bg-dark">
-                <div class="card-header">
-                    <h4 class="card-title">
-                        <span data-toggle="collapse" class="title-text" data-target="#bedHeater">Bed
-                            Heater</span>
-                    </h4>
+    <wrapper class="d-flex flex-column">
+        <header>
+            <h1>Cetus 3d printer Utilities</h1>
+        </header>
+        <main role="main" class="flex-fill">
+            <div class="card-group col-sm-8">
+                <div class="card text-white bg-dark">
+                    <div class="Sensor Readings">
+                        <h4 class="card-title">
+                            <span data-toggle="collapse" class="title-text" data-target="#sensorChart">Sensor
+                                Values</span>
+                        </h4>
+                    </div>
+                    <div id="sensorChart" class="section collapse show">
+                        <canvas id="chartCanvas">
+                        </canvas>
+                    </div>
                 </div>
-                <div id="bedHeater" class="section collapse show">
-                    <div class="section-row align-items-center w-100">
-                        <div>
-                            <label class="input-group-text">Heater</label>
-                        </div>
-                        <div class="col-auto powered">
-                            <div class="powered off collapse">
-                                <span>Currently Turned Off!!</span>
-                            </div>
-                            <div class="progress powered on">
-                                <div id="progressBar" class="progress-bar progress-bar-striped"
-                                    style="color:rgba(26, 12, 12, 0.788);width:0%">0%</div>
-                            </div>
-                        </div>
-                        <div>
-                            <span class="link" id="toggle">
-                                <strong>Turn OFF</strong>
-                                <i class="fas fa-power-off"></i>
-                            </span>
-                        </div>
+            </div>
+            <div class="card-group col-sm-8">
+                <div class="card text-white bg-dark">
+                    <div class="card-header">
+                        <h4 class="card-title">
+                            <span data-toggle="collapse" class="title-text" data-target="#bedHeater">Bed
+                                Heater</span>
+                        </h4>
                     </div>
-                    <div class="section-row align-items-center">
-                        <div class="powered">
-                            <div class="powered on ">
-                                <div style="min-width: 66px;" class="col-auto">
-                                    <label class="label">Started at</label>
-                                    <span id="startTime"></span>
+                    <div id="bedHeater" class="section collapse show">
+                        <div class="collapse show available">
+                            <div class="section-row align-items-center w-100">
+                                <div>
+                                    <label class="input-group-text">Heater</label>
                                 </div>
-                                <div style="min-width: 66px;" class="col-auto">
-                                    <label class="label">Running for</label>
-                                    <span id="runTime"></span>
+                                <div class="col-auto powered">
+                                    <div class="powered off collapse">
+                                        <span>Currently Turned Off!!</span>
+                                    </div>
+                                    <div class="progress powered on">
+                                        <div id="progressBar" class="progress-bar progress-bar-striped"
+                                            style="color:rgba(26, 12, 12, 0.788);width:0%">0%</div>
+                                    </div>
                                 </div>
-                                <div style="min-width: 66px;" class="col-auto">
-                                    <label class="label">Will turn off at</label>
-                                    <span id="stopTime"></span>
+                                <div>
+                                    <span class="link" id="toggle">
+                                        <strong>Turn OFF</strong>
+                                        <i class="fas fa-power-off"></i>
+                                    </span>
                                 </div>
                             </div>
-                        </div>
-                    </div>
-                    <div class="section-row align-items-center">
-                        <div class="col-auto">
-                            <label class="col-form-label">Current bed temperature</label>
-                        </div>
-                        <div class="col-auto">
-                            <span id='current_temp' />
-                        </div>
-                    </div>
-                    <div class="form-group">
-                        <div class="input-group m-2">
-                            <div class="input-group-prepend">
-                                <label class="input-group-text">Target bed Temperature</label>
+                            <div class="section-row align-items-center">
+                                <div class="powered">
+                                    <div class="powered on ">
+                                        <div style="min-width: 66px;" class="col-auto">
+                                            <label class="label">Started at</label>
+                                            <span id="startTime"></span>
+                                        </div>
+                                        <div style="min-width: 66px;" class="col-auto">
+                                            <label class="label">Running for</label>
+                                            <span id="runTime"></span>
+                                        </div>
+                                        <div style="min-width: 66px;" class="col-auto">
+                                            <label class="label">Will turn off at</label>
+                                            <span id="stopTime"></span>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
-                            <input type="number" id='sp' class="narrow form-control" step='1' maxlength=3 max="125"
-                                min="45">
-                            <div class="input-group-append">
-                                <button type="button" class='btn  btn-outline-secondary' id="setTemp">Set</button>
+                            <div class="section-row align-items-center">
+                                <div class="col-auto">
+                                    <label class="col-form-label">Current bed temperature</label>
+                                </div>
+                                <div class="col-auto">
+                                    <span id='current_temp' />
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <div class="input-group m-2">
+                                    <div class="input-group-prepend">
+                                        <label class="input-group-text">Target bed Temperature</label>
+                                    </div>
+                                    <input type="number" id='sp' class="narrow form-control" step='1' maxlength=3
+                                        max="125" min="45">
+                                    <div class="input-group-append">
+                                        <button type="button" class='btn  btn-outline-secondary'
+                                            id="setTemp">Set</button>
+                                    </div>
+                                </div>
+                                <div class="input-group m-2">
+                                    <div class="input-group-prepend">
+                                        <label class="input-group-text">Add Runtime (Minutes)</label>
+                                    </div>
+                                    <input type="number" id='timeout' step='1' class="narrow form-control">
+                                    <div class="input-group-append">
+                                        <button type="button" class='btn  btn-outline-secondary'
+                                            id="addtime">Add</button>
+                                    </div>
+                                </div>
                             </div>
                         </div>
-                        <div class="input-group m-2">
-                            <div class="input-group-prepend">
-                                <label class="input-group-text">Add Runtime (Minutes)</label>
-                            </div>
-                            <input type="number" id='timeout' step='1' class="narrow form-control">
-                            <div class="input-group-append">
-                                <button type="button" class='btn  btn-outline-secondary' id="addtime">Add</button>
-                            </div>
+                        <div class="collapse unavailable">
+                            <span> Could not read bed temperature!! Make sure DS18B20 is connected properly.</span>
                         </div>
                     </div>
                 </div>
             </div>
-        </div>
-        <div class="card-group col-sm-8">
-            <div class="card text-white bg-dark">
-                <div class="card-header">
-                    <h4 class="card-title">
-                        <span data-toggle="collapse" class="title-text" data-target="#ambientTemp">Ambient </span>
-                    </h4>
-                </div>
-                <div id="ambientTemp" class="section collapse show">
-                    <div class="section-row align-items-center row">
-                        <div class="col-sm">
-                            <label class="label">Current Temperature</label>
-                        </div>
-                        <div class="col-sm">
-                            <span class="value" id="temperature"></span>
-                        </div>
+            <div class="card-group col-sm-8">
+                <div class="card text-white bg-dark">
+                    <div class="card-header">
+                        <h4 class="card-title">
+                            <span data-toggle="collapse" class="title-text" data-target="#ambientTemp">Ambient </span>
+                        </h4>
                     </div>
-                    <div class="section-row align-items-center row">
-                        <div class="col-sm">
-                            <label class="label">Relative Humidity</label>
+                    <div id="ambientTemp" class="section collapse show">
+                        <div class="collapse show available">
+                            <div class="section-row align-items-center row">
+                                <div class="col-sm">
+                                    <label class="label">Current Temperature</label>
+                                </div>
+                                <div class="col-sm">
+                                    <span class="value" id="temperature"></span>
+                                </div>
+                            </div>
+                            <div class="section-row align-items-center row">
+                                <div class="col-sm">
+                                    <label class="label">Relative Humidity</label>
+                                </div>
+                                <div class="col-sm">
+                                    <span class="value" id="humidity"></span>
+                                </div>
+                            </div>
                         </div>
-                        <div class="col-sm">
-                            <span class="value" id="humidity"></span>
+                        <div class="collapse unavailable">
+                            <span>Could not read Ambient Temperature!! Make sure HTU21 is connected properly.</span>
                         </div>
                     </div>
                 </div>
             </div>
-        </div>
-    </main>
-    <footer class="footer">
-        <div class="container">
+            <div class="card-group col-sm-8">
+                <div class="card text-white bg-dark">
+                    <div class="card-header">
+                        <h4 class="card-title">
+                            <span data-toggle="collapse" class="title-text" data-target="#weighingScale">Spool
+                                Weight</span>
+                        </h4>
+                    </div>
+                    <div id="weighingScale" class="section collapse show">
+                        <div class="collapse show available">
+                            <div class="section-row align-items-center row">
+                                <div class="col-sm">
+                                    <label class="label">Current Weight</label>
+                                </div>
+                                <div class="col-sm">
+                                    <span class="value" id="Weight"></span>
+                                </div>
+                            </div>
+                            <div class="section-row align-items-center row">
+                                <div class="col-sm">
+                                    <label class="label">Load CellReading</label>
+                                </div>
+                                <div class="col-sm">
+                                    <span class="value" id="LoadCellReading"></span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="collapse unavailable">
+                            <span> Could not read Spool weight!! Make sure HX711 load cell is connected properly.</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+        <footer class="container-fluid w-100 text-light py-3">
             <div>
                 <span class="text-muted" id='stat'></span>
                 <a href="/config">
                     <i class="fas fa-cog"></i>
                 </a>
+                <span class="text-muted">Copyright: Adystech.com</span>
             </div>
-            <div>
-                <span>Copyright: Adystech.com</span>
-            </div>
-        </div>
-    </footer>
+        </footer>
+    </wrapper>
 </body>
 
 </html>
