@@ -24,22 +24,26 @@ public:
     bit_12 = 0x7F
   };
 
-  DS18B20(uint8_t data_pin, Resolution res = Resolution::bit_12);
+  DS18B20(uint8_t data_pin, Resolution res = Resolution::bit_12,bool useInternalPullUp=false);
 
-  DS18B20(uint8_t power_pin, uint8_t data_pin, Resolution res = Resolution::bit_12);
+  DS18B20(uint8_t power_pin, uint8_t data_pin, Resolution res = Resolution::bit_12,bool useInternalPullUp=false);
 
   ///Return TRUE if sensor is found and can be read. FALSE if DS18B20 is not found.
   bool begin();  
   //Primary read functions
   double getTemperature(void);
-
+  bool setResolution(Resolution res);
+  
 private:
   gpio_num_t _data_pin;
   gpio_num_t _vcc_pin;
+  bool _parasitePower = false;
+  bool _usePullup = false;
   Resolution _res;
   unsigned long _lastReadTs;
   double _lastTemp;
-  
+  portMUX_TYPE mux;
+
   bool readBit();
   void writeBit(bool bit);
 
@@ -47,6 +51,7 @@ private:
   bool checkCRC(const uint8_t *data, uint8_t len);
 
   unsigned long getConversionTime();
+  double readTemperature(void);
 
   uint8_t readByte();
   void writeByte(uint8_t data);
@@ -65,14 +70,16 @@ private:
   bool waitForBus(int targetState, int timeout);
 
   /**
-    * @brief delay the execution for timeout microseconds, keep polling to catch any state transitions.
+    * @brief delay the execution for timeout microseconds
     *
     *
     * @param  timeout no of micro seconds to wait
     * @return
-    *     - int number of microseconds spent
+    *     - true - if bus state remained same as before
     *
     */
-  int keepBus(int timeout);
+  bool keepBus(int timeout);
+  unsigned long  keepBusForReminder(unsigned long start, int timeout);
+  
 };
 #endif //__DS18B20__

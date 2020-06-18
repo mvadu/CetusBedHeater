@@ -43,22 +43,23 @@ unsigned long timeoutTs;
 long timeoutSec;
 time_t uptime;
 
-const uint8_t ds_power = 12;
-const uint8_t ds_data = 14;
+const uint8_t ds_Vcc = 23;
+const uint8_t ds_Gnd = 19;
+const uint8_t ds_data = 18;
 
-const uint8_t mosfet_Vcc = 25;
-const uint8_t mosfet_Gnd = 27;
-const uint8_t pwm_Pin = 26;
+//const uint8_t mosfet_Vcc = 15;
+//const uint8_t mosfet_Gnd = 15;
+const uint8_t pwm_Pin = 2;
 
-const uint8_t htu_Vcc = 4;
-const uint8_t htu_Gnd = 16;
-const uint8_t htu_Scl = 17;
-const uint8_t htu_Sda = 5;
+//const uint8_t htu_Vcc = 15;
+//const uint8_t htu_Gnd = 18;
+const uint8_t htu_Scl = 22;
+const uint8_t htu_Sda = 21;
 
-const uint8_t hx711_Vcc = 23;
-const uint8_t hx711_Gnd = 19;
-const uint8_t hx711_Sda = 21;
-const uint8_t hx711_Sck = 22;
+//const uint8_t hx711_Vcc = 15;
+//const uint8_t hx711_Gnd = 18;
+const uint8_t hx711_Sda = 23;
+const uint8_t hx711_Sck = 19;
 
 WiFiConfig wifiConfig;
 PIDConfig pidConfig;
@@ -119,154 +120,181 @@ time_t currentTime();
 
 void setup()
 {
-    // put your setup code here, to run once:
-    id = (ESP.getEfuseMac() >> 16) & 0xFFFFFFFF;
-    hostName = "esp_";
-    hostName.concat(id);
     Serial.begin(115200);
-    chipInfo = new ChipInfo();
-    if (chipInfo->reason == POWERON_RESET || chipInfo->reason == RTCWDT_RTC_RESET)
-        resetConfig = false;
 
-    if (!resetConfig)
-    {
-        ConfigManager::LoadConfig("WiFiConfig", wifiConfig);
-        Serial.printf("Found wifiConfig %s, %s, %s, %d \n", wifiConfig.ssid.c_str(), wifiConfig.password.c_str(), wifiConfig.clientName.c_str(), wifiConfig.valid);
-    }
+    // put your setup code here, to run once:
+    // id = (ESP.getEfuseMac() >> 16) & 0xFFFFFFFF;
+    // hostName = "esp_";
+    // hostName.concat(id);
 
-    pinMode(LED_BUILTIN, OUTPUT); // set the LED pin mode
-    ledcAttachPin(LED_BUILTIN, 1);
-    ledcSetup(1, 12000, 16);
+    // delay(2000);
+    // chipInfo = new ChipInfo();
+    // if (chipInfo->reason == POWERON_RESET || chipInfo->reason == RTCWDT_RTC_RESET)
+    //     resetConfig = false;
 
-    timerFadeLed = xTimerCreate(
-        "ledFadeTimer",
-        pdMS_TO_TICKS(500),
-        pdTRUE,
-        (void *)0,
-        fadeLedCallback);
+    // if (!resetConfig)
+    // {
+    //     ConfigManager::LoadConfig("WiFiConfig", wifiConfig);
+    //     Serial.printf("Found wifiConfig %s, %s, %s, %d \n", wifiConfig.ssid.c_str(), wifiConfig.password.c_str(), wifiConfig.clientName.c_str(), wifiConfig.valid);
+    // }
 
-    hw_timer_t *timer = timerBegin(0, 80, true);     //timer 0, div 80 with 8MHz, its 1us
-    timerAttachInterrupt(timer, &resetModule, true); //attach callback
-    timerAlarmWrite(timer, 100000, true);            //  1sec
-    timerAlarmEnable(timer);                         //enable interrupt
-    if (!wifiConfig.valid)
-    {
-        Serial.println("No valid WiFi credentials found, starting WiFi wifiConfig wizard");
-        SetupAccessPoint();
-    }
-    else
-    {
+    // pinMode(LED_BUILTIN, OUTPUT); // set the LED pin mode
+    // ledcAttachPin(LED_BUILTIN, 1);
+    // ledcSetup(1, 12000, 16);
 
-        hostName = wifiConfig.clientName;
-        WiFi.mode(WIFI_STA);
-        WiFi.disconnect();
-        WiFi.setHostname(hostName.c_str());
-        initWifiConnection();
-    }
+    // timerFadeLed = xTimerCreate(
+    //     "ledFadeTimer",
+    //     pdMS_TO_TICKS(500),
+    //     pdTRUE,
+    //     (void *)0,
+    //     fadeLedCallback);
 
-    // powerup mosfet breakout
-    pinMode(mosfet_Vcc, PULLUP);
-    digitalWrite(mosfet_Vcc, HIGH);
-    pinMode(mosfet_Gnd, OUTPUT);
-    digitalWrite(mosfet_Gnd, LOW);
-    delay(500);
+    // hw_timer_t *timer = timerBegin(0, 80, true);     //timer 0, div 80 with 8MHz, its 1us
+    // timerAttachInterrupt(timer, &resetModule, true); //attach callback
+    // timerAlarmWrite(timer, 100000, true);            //  1sec
+    // timerAlarmEnable(timer);                         //enable interrupt
+    // if (!wifiConfig.valid)
+    // {
+    //     Serial.println("No valid WiFi credentials found, starting WiFi wifiConfig wizard");
+    //     SetupAccessPoint();
+    // }
+    // else
+    // {
 
-    if (!ConfigManager::LoadConfig("PIDConfig", pidConfig))
-        pidConfig.param = {2, 5, 0.5};
+    //     hostName = wifiConfig.clientName;
+    //     WiFi.mode(WIFI_STA);
+    //     WiFi.disconnect();
+    //     WiFi.setHostname(hostName.c_str());
+    //     initWifiConnection();
+    // }
+    // // powerup mosfet breakout
+    // // pinMode(mosfet_Vcc, OUTPUT);
+    // // digitalWrite(mosfet_Vcc, HIGH);
+    // // pinMode(mosfet_Gnd, OUTPUT);
+    // // digitalWrite(mosfet_Gnd, LOW);
 
-    if (!ConfigManager::LoadConfig("PWMConfig", pwmConfig))
-    {
-        pwmConfig.Temp = criticalMax;
-        pwmConfig.minD = 0;
-        pwmConfig.maxD = 100;
-    }
-    ds = new DS18B20(ds_power, ds_data, DS18B20::Resolution::bit_10);
+    // if (!ConfigManager::LoadConfig("PIDConfig", pidConfig))
+    //     pidConfig.param = {2, 5, 0.5};
+
+    // if (!ConfigManager::LoadConfig("PWMConfig", pwmConfig))
+    // {
+    //     pwmConfig.Temp = criticalMax;
+    //     pwmConfig.minD = 0;
+    //     pwmConfig.maxD = 100;
+    // }
+
+    //DS18B20PAR does not need a Power pin connected, DS18B20 goes to parasite power mode if VDD is grounded
+    pinMode(ds_Gnd, OUTPUT);
+    digitalWrite(ds_Gnd, LOW);
+    pinMode(ds_Vcc, OUTPUT);
+    digitalWrite(ds_Vcc, LOW);
+
+    pinMode(5, OUTPUT);
+    digitalWrite(5, LOW);
+
+    delay(1000);
+    ds = new DS18B20(ds_data, DS18B20::Resolution::bit_10);
+
     if (ds != NULL && !ds->begin())
     {
         delete ds;
         ds = NULL;
         Serial.println("DS18B20 NOT found!\n");
     }
-    if (ds != NULL)
+    else
     {
-        pid = new PidPwm(pwm_Pin, 2, 24000, 10, criticalMax, pidConfig.param, [&]() -> double {
-            //limit the bed to 100°C, if its more than that report NAN, PidPwm should cut off output bringing down the temp
-            double t = ds->getTemperature();
-            if (t > pwmConfig.Temp)
-                return NAN;
-            //hard off if we are already at the set Target
-            if (isnan(targetTemp) || t > targetTemp)
-                return NAN;
-            return t;
-        });
-        pid->setLimitsPercentage(pwmConfig.minD, pwmConfig.maxD);
-        pid->setTarget(targetTemp);
-        pid->setComputeInterval(1000);
+        pinMode(ds_data, OUTPUT);
+        digitalWrite(ds_Vcc, LOW);
+
+        // gpio_reset_pin((gpio_num_t)ds_data);
+        // gpio_pad_select_gpio((gpio_num_t)ds_data);
+        // gpio_set_direction((gpio_num_t)ds_data, gpio_mode_t::GPIO_MODE_INPUT_OUTPUT);
     }
+    delay(100);
+    // if (ds != NULL)
+    // {
+    //     Serial.printf("DS18B20 found! Temp: %f\n", ds->getTemperature());
+    //     pid = new PidPwm(pwm_Pin, 2, 24000, 10, criticalMax, pidConfig.param, [&]() -> double {
+    //         //limit the bed to 100°C, if its more than that report NAN, PidPwm should cut off output bringing down the temp
+    //         double t = ds->getTemperature();
+
+    //         return t;
+    //     });
+    //     pid->setComputeInterval(1000);
+    //     pid->setLimitsPercentage(pwmConfig.minD, pwmConfig.maxD);
+    //     pid->setTarget(targetTemp);
+    // }
+
     // powerup HTU21D breakout
+    // pinMode(htu_Vcc, OUTPUT);
+    // digitalWrite(htu_Vcc, HIGH);
+    // pinMode(htu_Gnd, OUTPUT);
+    // digitalWrite(htu_Gnd, LOW);
+    // delay(1000);
 
-    pinMode(htu_Vcc, OUTPUT);
-    digitalWrite(htu_Vcc, HIGH);
-    pinMode(htu_Gnd, OUTPUT);
-    digitalWrite(htu_Gnd, LOW);
-    delay(1000);
-    gpio_pad_select_gpio(htu_Sda);
-    gpio_pad_select_gpio(htu_Scl);
+    // htu = new HTU21D(false);
+    // if (htu != NULL && htu->begin(htu_Sda, htu_Scl))
+    // {
+    //     Serial.println("HTU21D found!\n");
+    //     Serial.printf("Temp:%f, Humid:%f \n", htu->getTemperature(), htu->getHumidity());
+    // }
+    // else
+    // {
+    //     delete htu;
+    //     htu = NULL;
+    //     Serial.println("HTU21D NOT found!\n");
+    // }
 
-    htu = new HTU21D(false);
-    if (htu != NULL && htu->begin(htu_Sda, htu_Scl))
-    {
-        Serial.println("HTU21D found!\n");
-        Serial.printf("Temp:%f, Humid:%f \n", htu->getTemperature(), htu->getHumidity());
-    }
-    else
-    {
-        delete htu;
-        htu = NULL;
-        Serial.println("HTU21D NOT found!\n");
-    }
+    // if (!ConfigManager::LoadConfig("LoadCellConfig", hxConfig))
+    // {
+    //     //TODO: calibrated value
+    //     hxConfig.calibValuePerGram = 1;
+    // }
 
-    if (!ConfigManager::LoadConfig("LoadCellConfig", hxConfig))
-    {
-        //TODO: calibrated value
-        hxConfig.calibValuePerGram = 1;
-    }
-
-    pinMode(hx711_Vcc, OUTPUT);
-    digitalWrite(hx711_Vcc, HIGH);
-    pinMode(hx711_Gnd, OUTPUT);
-    digitalWrite(hx711_Gnd, LOW);
-
-    delay(500);
-    hx = new HX711();
-    if (hx != NULL && hx->begin(hx711_Sck, hx711_Sda))
-    {
-        Serial.println("HX711 found!\n");
-        Serial.printf("Load Cell Output:%lu \n", hx->getRawReading());
-        hx->tare();
-        Serial.printf("Load Cell Output after tare:%lu \n", hx->getRawReading());
-    }
-    else
-    {
-        delete hx;
-        hx = NULL;
-        Serial.println("HX711 NOT found!\n");
-    }
+    // pinMode(hx711_Vcc, OUTPUT);
+    // digitalWrite(hx711_Vcc, HIGH);
+    // if (htu_Gnd != hx711_Gnd)
+    // {
+    //     pinMode(hx711_Gnd, OUTPUT);
+    //     digitalWrite(hx711_Gnd, LOW);
+    // }
+    // delay(500);
+    // hx = new HX711();
+    // if (hx != NULL && hx->begin(hx711_Sck, hx711_Sda))
+    // {
+    //     Serial.println("HX711 found!\n");
+    //     Serial.printf("Load Cell Output:%lu \n", hx->getRawReading());
+    //     hx->tare();
+    //     Serial.printf("Load Cell Output after tare:%lu \n", hx->getRawReading());
+    // }
+    // else
+    // {
+    //     delete hx;
+    //     hx = NULL;
+    //     Serial.println("HX711 NOT found!\n");
+    // }
 }
 
 void loop()
 {
-    // if (hx != NULL)
-    // {
-    //     Serial.printf("%lu\n", hx->getRawReading());
-    // }
+    if (ds != NULL)
+    {
+        Serial.printf("%f\n", ds->getTemperature());
+    }
+    else
+    {
+        bool b = gpio_get_level((gpio_num_t)ds_data);
+        Serial.printf("%x\n", b);
+        gpio_set_level((gpio_num_t)ds_data, 1);
+    }
 
     if (pid != NULL && currentTime() > timeoutTs)
     {
+        //Serial.println("Timed out");
         turnOffHeater();
     }
     yield();
-    delay(500);
+    delay(1000);
 }
 
 void SetupAccessPoint()
@@ -694,7 +722,7 @@ void onUpload(AsyncWebServerRequest *request, String filename, size_t index, uin
 void getHeaterStatus(AsyncWebServerRequest *request)
 {
     AsyncResponseStream *response = request->beginResponseStream("application/json");
-    response->addHeader("Cache-Control", "max-age=5");
+    response->addHeader("Cache-Control", "max-age=1");
     if (ds != NULL && pid != NULL)
     {
         if (pid->isRunning())

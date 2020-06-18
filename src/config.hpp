@@ -71,7 +71,7 @@ public:
     bool serialize(char *dataOut) const override;
     bool deserialize(const char *dataIn) override;
 
-    uint8_t ds_power, ds_data;
+    uint8_t ds_Vcc, ds_data;
     uint8_t mosfet_Vcc, mosfet_Gnd, pwm_Pin;
     uint8_t htu_Vcc, htu_Gnd, htu_Scl, htu_Sda;
     uint8_t hx711_Vcc, hx711_Sda, hx711_Sck;

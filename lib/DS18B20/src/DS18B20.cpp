@@ -4,30 +4,65 @@
 #include "DS18B20.h"
 #include <Arduino.h>
 
-DS18B20::DS18B20(uint8_t power_pin, uint8_t data_pin, DS18B20::Resolution res) : DS18B20(data_pin, res)
+DS18B20::DS18B20(uint8_t power_pin, uint8_t data_pin, DS18B20::Resolution res, bool usePullup) : DS18B20(data_pin, res, usePullup)
 {
     _vcc_pin = (gpio_num_t)power_pin;
-    gpio_pad_select_gpio(_vcc_pin);
-    gpio_set_direction(_vcc_pin, gpio_mode_t::GPIO_MODE_OUTPUT);
-    gpio_pullup_en(_vcc_pin);
-    gpio_set_level(_vcc_pin, 1);
-    // gpio_set_level(_vcc_pin, 0);
-    // gpio_pullup_dis(_vcc_pin);
-    delay(50);
+    _parasitePower = false;
 }
 
-DS18B20::DS18B20(uint8_t data_pin, DS18B20::Resolution res)
+DS18B20::DS18B20(uint8_t data_pin, DS18B20::Resolution res, bool usePullup)
 {
     _data_pin = (gpio_num_t)data_pin;
     _res = res;
-    //some of the pads on ESP32 are multiplexed to do more than one act. If we want only GPIO then we need to ask.
-    gpio_pad_select_gpio(_data_pin);
-    gpio_set_direction(_data_pin, gpio_mode_t::GPIO_MODE_INPUT_OUTPUT);
-    gpio_pullup_en(_data_pin);
+    mux = portMUX_INITIALIZER_UNLOCKED;
+    _parasitePower = true;
+    _usePullup = usePullup;
 }
 
-bool DS18B20::begin(){
+bool DS18B20::begin()
+{
+    if (!_parasitePower)
+    {
+        gpio_reset_pin(_vcc_pin);
+        gpio_pad_select_gpio(_vcc_pin);
+        gpio_set_direction(_vcc_pin, gpio_mode_t::GPIO_MODE_OUTPUT);
+        gpio_pullup_en(_vcc_pin);
+        gpio_set_level(_vcc_pin, 1);
+        delay(50);
+    }
+    //some of the pads on ESP32 are multiplexed to do more than one act. If we want only GPIO then we need to ask.
+    gpio_reset_pin(_data_pin);
+    gpio_pad_select_gpio(_data_pin);
+    gpio_set_direction(_data_pin, gpio_mode_t::GPIO_MODE_INPUT_OUTPUT);
+    //gpio_set_drive_capability(_data_pin, GPIO_DRIVE_CAP_1);
+    //gpio_set_pull_mode(_data_pin,GPIO_PULLUP_PULLDOWN);
+    if (_usePullup)
+        gpio_pullup_en(_data_pin);
     //powerdown the bus if no sensor is detected
+    if (sendResetPulse())
+    {
+        setResolution(_res);
+        return true;
+    }
+    else
+    {
+        gpio_reset_pin(_data_pin);
+        gpio_set_level(_data_pin, 0);
+        if (_usePullup)
+            gpio_pullup_dis(_data_pin);
+        if (!_parasitePower)
+        {
+            gpio_set_level(_vcc_pin, 0);
+            gpio_pullup_dis(_vcc_pin);
+        }
+        Serial.println("Failed with reset");
+        return false;
+    }
+}
+
+bool DS18B20::setResolution(Resolution res)
+{
+    _res = res;
     if (sendResetPulse())
     {
         writeByte(CommandKeywords::Skip_Rom);
@@ -37,68 +72,73 @@ bool DS18B20::begin(){
         writeByte(0);
         writeByte(_res);
         delay(10);
-        sendResetPulse();
-        return true;
+        return sendResetPulse();
     }
     else
-    {
-        gpio_set_level(_data_pin, 0);
-        gpio_pullup_dis(_data_pin);
-        gpio_set_level(_vcc_pin, 0);
-        gpio_pullup_dis(_vcc_pin);
         return false;
-    }
 }
 
 bool DS18B20::waitForBus(int targetState, int timeout)
 {
-    noInterrupts();
     while (gpio_get_level(_data_pin) != targetState)
     {
         if (--timeout == 0)
             break;
         delayMicroseconds(1);
     };
-    interrupts();
+
     return gpio_get_level(_data_pin) == targetState;
 }
 
-int DS18B20::keepBus(int timeout)
+bool DS18B20::keepBus(int timeout)
 {
-    unsigned long t = micros();
-    int initState = gpio_get_level(_data_pin);
     if (timeout < 0)
         return 0;
-    do
+    int initState = gpio_get_level(_data_pin);
+    delayMicroseconds(timeout);
+    return (gpio_get_level(_data_pin) == initState);
+}
+
+unsigned long DS18B20::keepBusForReminder(unsigned long start, int timeout)
+{
+    unsigned long delta = timeout - (micros() - start);
+    if (delta < timeout)
     {
-        if (--timeout == 0)
-            break;
-        delayMicroseconds(1);
-    } while (gpio_get_level(_data_pin) == initState);
-    return micros() - t;
+        keepBus(delta);
+        return delta;
+    }
+    return 0;
 }
 
 //sends reset pulse and check for presence of the DS18B20 sensor
 bool DS18B20::sendResetPulse(void)
 {
+    //record the init start
+    unsigned long t = micros();
+
     //Tx reset pulse by pulling the 1-Wire bus low for a minimum of 480µs
-    noInterrupts();
     gpio_set_level(_data_pin, 0);
     keepBus(480);
+
+    portENTER_CRITICAL(&mux);
 
     //Let go of the bus, let internal pull up pull it to high
     gpio_set_level(_data_pin, 1);
     waitForBus(HIGH, 15);
-    interrupts();
+    //if (!waitForBus(HIGH, 15))
+    //    return false;
 
-    //DS18B20 detects this rising edge, it waits 15µs to 60µs and then transmits a presence pulse
+    //DS18B20 detects this raising edge, it waits 15µs to 60µs and then transmits a presence pulse
     // by pulling the 1-Wire bus low for 60µs to 240µs.
-    keepBus(15);
+    keepBusForReminder(t, 16);
     bool presence = waitForBus(LOW, 240);
 
+    portEXIT_CRITICAL(&mux);
+    //Serial.printf("presence - %x \n",presence);
     //after presence pulse bus should go back to high, detects shorted pins
     presence = presence && waitForBus(HIGH, 200);
-    keepBus(200);
+    //total INITIALIZATION PROCEDURE should last 2*480µs minimum
+    delay(1);
     return presence;
 }
 
@@ -106,50 +146,60 @@ bool DS18B20::sendResetPulse(void)
 bool DS18B20::readBit()
 {
     //All read time slots must be a minimum of 60µs in duration with a minimum of a 1µs recovery time between slots.
-    unsigned long t;
     bool d;
+    portENTER_CRITICAL(&mux);
 
     //record the read timeslot start
-    t = micros();
+    unsigned long t = micros();
     // initiate a read slot by pulling the 1-Wire bus low for a minimum of 1µs and then releasing the bus
     gpio_set_level(_data_pin, 0);
-    keepBus(5);
+    waitForBus(LOW, 5);
 
     //let go of the bus, let it go back to high
     gpio_set_level(_data_pin, 1);
-    keepBus(5);
+    waitForBus(HIGH, 15);
 
-    //Output data from the DS18B20 is valid for 15µs after the falling edge that initiated the read time slot.
-    //if slave wants to send a 0, it will pull the bus low, else it will be left high
-    d = gpio_get_level(_data_pin) == HIGH;
+    //Output data from the DS18B20 is valid for 45µs starting at 15µs after the falling edge that initiated the read time slot.
+    //if slave wants to send a 0, it will pull the bus low, else it will be left high, leading to a timeout
+    d = !waitForBus(LOW, 45);
+    portEXIT_CRITICAL(&mux);
 
     //wait for remainder of the slot
-    keepBus(50 - (micros() - t));
+    keepBusForReminder(t, 100);
+
     return d;
 }
 
 void DS18B20::writeBit(bool bit)
 {
     //All write time slots must be a minimum of 60µs in duration with a minimum of a 1µs recovery time
-    unsigned long t;
+    portENTER_CRITICAL(&mux);
+
     //record the timeslot start
-    t = micros();
+    unsigned long t = micros();
 
     // generate a Write time slot by pulling the bus low
     gpio_set_level(_data_pin, 0);
+    waitForBus(LOW, 5);
+
     //to write 1, the master must release the 1-Wire bus within 15µs.
     //low bit is indicated by holding it low
     if (bit == true)
     {
-        keepBus(10);
         gpio_set_level(_data_pin, 1);
+        waitForBus(HIGH, 15);
     }
     // DS18B20 samples the 1-Wire bus during a window that lasts from 15µs to 60µs
-    keepBus(55);
+    keepBusForReminder(t, 45);
+
     //let go of the bus
     gpio_set_level(_data_pin, 1);
+    waitForBus(HIGH, 15);
+
+    portEXIT_CRITICAL(&mux);
+
     //wait for remainder of the slot
-    keepBus(60 - (micros() - t));
+    keepBusForReminder(t, 100);
 }
 
 uint8_t DS18B20::readByte()
@@ -172,16 +222,17 @@ void DS18B20::writeByte(uint8_t data)
 }
 unsigned long DS18B20::getConversionTime()
 {
+    int tCONV = 800;
     switch (_res)
     {
     case Resolution::bit_9:
-        return (94 + 10);
+        return tCONV / 8;
     case Resolution::bit_10:
-        return (188 + 20);
+        return tCONV / 4;
     case Resolution::bit_11:
-        return (375 + 40);
+        return tCONV / 2;
     case Resolution::bit_12:
-        return (750 + 100);
+        return tCONV;
     }
     return 0;
 }
@@ -191,15 +242,26 @@ double DS18B20::getTemperature(void)
     //if there is a read request before the minimum time, return last known value.
     if (!isnan(_lastTemp) && (millis() - _lastReadTs) < getConversionTime())
         return _lastTemp;
+    _lastReadTs = millis();
+    _lastTemp = readTemperature();
+    return _lastTemp;
+}
 
+double DS18B20::readTemperature(void)
+{
     byte data[9];
     if (sendResetPulse())
     {
         //Serial.printf("Found Sensor \n");
         writeByte(CommandKeywords::Skip_Rom);
+
         writeByte(CommandKeywords::Convert_Temp);
+        //Need to pull bus Up to feed the sensor in parasite power mode (or DS18B20P)
+        //strong pullup within 10 μs (max) after a Convert T [44h] or Copy Scratchpad [48h] command is issued
+        gpio_set_level(_data_pin, 1);
+
         //conversion can take upto 750ms
-        delay(getConversionTime());
+        delay(getConversionTime() + 100);
         uint8_t triesLeft = 3;
         do
         {
@@ -215,11 +277,17 @@ double DS18B20::getTemperature(void)
             //Serial.println("");
             if (checkCRC(data, 9))
                 break;
-            delay(10);
         } while (triesLeft-- > 0);
 
         if (triesLeft && data[7] == 0x10)
         {
+            //Sometimes parasite powered sensor might get reset midway. detect it by checking power ON reset values
+            if (data[0] == 0x50 && data[1] == 0x05)
+            {
+                setResolution(_res);
+                return NAN;
+            }
+
             int16_t raw = (data[1] << 8) | data[0];
             // at lower res, the low bits are undefined, so let's zero them
             switch (_res)
@@ -241,8 +309,10 @@ double DS18B20::getTemperature(void)
             //DS18B20 Measures Temperatures from -55°C to +125°C
             if (t > -55 && t < 125)
             {
-                _lastReadTs = millis();
-                _lastTemp = t;
+                if (t == 85.0)
+                {
+                    Serial.printf("got 85C @ 0 - %x, 1 - %x, 4 - %x, res - %x \n", data[0], data[1], data[4], _res);
+                }
                 return t;
             }
             else

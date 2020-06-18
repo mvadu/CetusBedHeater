@@ -136,12 +136,13 @@
                 return `${h}:${m < 10 ? '0' + m : m}:${s < 10 ? '0' + s : s}` //zero padding on minutes and seconds
             }
 
-            function getHeaterStatus() {
+            function getHeaterStatus(cached = true) {
                 if ($('#bedHeater').is(":hidden"))
                     return;
                 $.ajax({
                     method: "GET",
-                    url: '/getHeaterStatus'
+                    url: '/getHeaterStatus',
+                    cache: cached
                 }).done(function (response) {
                     document.body.dataset.heater = response.Heater;
                     $('#current_temp').text(`${response.Current} °C`);
@@ -217,7 +218,7 @@
                         $('#bedHeater .unavailable').hide();
                         getHeaterStatus();
                         heaterTimer = setInterval(getHeaterStatus, 1500);
-                        let d = addDataSet('Bed Temperature', 'hsla(' + hue + ', 75%, 50%, 0.5)',function () {
+                        let d = addDataSet('Bed Temperature', 'hsla(' + hue + ', 75%, 50%, 0.5)', function () {
                             let ds = this;
                             $.ajax({
                                 method: "GET",
@@ -240,7 +241,7 @@
                         $('#ambientTemp .unavailable').hide();
                         getAmbient();
                         ambientTimer = setInterval(getAmbient, 5000);
-                        let d = addDataSet('Ambient Temperature', 'hsla(' + hue + ', 75%, 50%, 0.5)',function () {
+                        let d = addDataSet('Ambient Temperature', 'hsla(' + hue + ', 75%, 50%, 0.5)', function () {
                             let ds = this;
                             $.ajax({
                                 method: "GET",
@@ -282,13 +283,13 @@
                         $('#weighingScale').collapse('hide');
                     }
                 });
+                setupChart();
+                setInterval(updateChart, 30000);
             }, 500);
-
-            setupChart();
-            setInterval(updateChart, 30000);
 
             $("#toggle").on("click", function () {
                 $.post("/heaterPower", { turnOn: (document.body.dataset.heater == "true" ? 0 : 1) });
+                getHeaterStatus(false);
             });
 
             $("#setTemp").click(function () {
@@ -349,8 +350,7 @@
                 chartConfig.data.labels.push(ts);
             }
             window.chartConfig = chartConfig;
-            window.sensorChart = new Chart(document.getElementById("chartCanvas").getContext('2d'), window.chartConfig);
-            setTimeout(updateChart,500);
+            setTimeout(updateChart, 1000);
         };
 
         function updateChart() {
@@ -361,10 +361,13 @@
                 for (i = last; i >= newLast; i += 60000)
                     window.chartConfig.data.labels.push(new Date(i));
             }
-            window.sensorChart.update();
+            if (window.sensorChart == null)
+                window.sensorChart = new Chart(document.getElementById("chartCanvas").getContext('2d'), window.chartConfig);
+            else
+                window.sensorChart.update();
         }
 
-        function addDataSet(sensor, color,refreshCallback) {
+        function addDataSet(sensor, color, refreshCallback) {
             var d = {
                 label: sensor,
                 backgroundColor: color,
@@ -373,6 +376,7 @@
                 data: []
             };
             d.refresh = refreshCallback;
+            d.refresh();
             window.chartConfig.data.datasets.push(d);
             return d;
         };
@@ -390,11 +394,11 @@
                 <div class="card text-white bg-dark">
                     <div class="Sensor Readings">
                         <h4 class="card-title">
-                            <span data-toggle="collapse" class="title-text" data-target="#sensorChart">Sensor
+                            <span data-toggle="collapse" class="title-text" data-target="#sensorChartCard">Sensor
                                 Values</span>
                         </h4>
                     </div>
-                    <div id="sensorChart" class="section collapse show">
+                    <div id="sensorChartCard" class="section collapse show">
                         <canvas id="chartCanvas">
                         </canvas>
                     </div>

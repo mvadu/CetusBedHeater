@@ -213,7 +213,7 @@ size_t SensorConfig::size() const
 bool SensorConfig::serialize(char *dataOut) const
 {
     char *p = dataOut;
-    memcpy(p, &ds_power, sizeof(uint8_t));
+    memcpy(p, &ds_Vcc, sizeof(uint8_t));
     memcpy(p, &ds_data, sizeof(uint8_t));
 
     memcpy(p, &mosfet_Vcc, sizeof(uint8_t));
@@ -235,7 +235,7 @@ bool SensorConfig::serialize(char *dataOut) const
 bool SensorConfig::deserialize(const char *dataIn)
 {
     const char *p = dataIn;
-    memcpy(&ds_power, p, sizeof(uint8_t));
+    memcpy(&ds_Vcc, p, sizeof(uint8_t));
     p += sizeof(uint8_t);
     memcpy(&ds_data, p, sizeof(uint8_t));
     p += sizeof(uint8_t);

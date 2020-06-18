@@ -17,4 +17,4 @@ struct VersionInfo
   const char* BuildTime;
 };
 
-const VersionInfo firmwareInfo = VersionInfo{    Major:  1,    Minor:  253,    BuildTime: "2020-05-17T06:20:24.006733" };
+const VersionInfo firmwareInfo = VersionInfo{    Major:  217,    Minor:  217,    BuildTime: "2020-06-18T04:05:45.896564" };
