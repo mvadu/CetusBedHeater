@@ -24,9 +24,9 @@ public:
     bit_12 = 0x7F
   };
 
-  DS18B20(uint8_t data_pin, Resolution res = Resolution::bit_12,bool useInternalPullUp=false);
+  DS18B20(uint8_t data_pin, Resolution res = Resolution::bit_12,bool useInternalPullUp=true);
 
-  DS18B20(uint8_t power_pin, uint8_t data_pin, Resolution res = Resolution::bit_12,bool useInternalPullUp=false);
+  DS18B20(uint8_t power_pin, uint8_t data_pin, Resolution res = Resolution::bit_12,bool useInternalPullUp=true);
 
   ///Return TRUE if sensor is found and can be read. FALSE if DS18B20 is not found.
   bool begin();  
@@ -41,6 +41,7 @@ private:
   bool _usePullup = false;
   Resolution _res;
   unsigned long _lastReadTs;
+  
   double _lastTemp;
   portMUX_TYPE mux;
 

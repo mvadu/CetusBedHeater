@@ -14,13 +14,13 @@ DS18B20::DS18B20(uint8_t data_pin, DS18B20::Resolution res, bool usePullup)
 {
     _data_pin = (gpio_num_t)data_pin;
     _res = res;
-    mux = portMUX_INITIALIZER_UNLOCKED;
     _parasitePower = true;
     _usePullup = usePullup;
 }
 
 bool DS18B20::begin()
 {
+    mux = portMUX_INITIALIZER_UNLOCKED;
     if (!_parasitePower)
     {
         gpio_reset_pin(_vcc_pin);
@@ -30,14 +30,20 @@ bool DS18B20::begin()
         gpio_set_level(_vcc_pin, 1);
         delay(50);
     }
+
     //some of the pads on ESP32 are multiplexed to do more than one act. If we want only GPIO then we need to ask.
     gpio_reset_pin(_data_pin);
     gpio_pad_select_gpio(_data_pin);
     gpio_set_direction(_data_pin, gpio_mode_t::GPIO_MODE_INPUT_OUTPUT);
+
     //gpio_set_drive_capability(_data_pin, GPIO_DRIVE_CAP_1);
     //gpio_set_pull_mode(_data_pin,GPIO_PULLUP_PULLDOWN);
     if (_usePullup)
+    {
+        Serial.println("enabled pull up");
         gpio_pullup_en(_data_pin);
+    }
+
     //powerdown the bus if no sensor is detected
     if (sendResetPulse())
     {
@@ -240,7 +246,7 @@ unsigned long DS18B20::getConversionTime()
 double DS18B20::getTemperature(void)
 {
     //if there is a read request before the minimum time, return last known value.
-    if (!isnan(_lastTemp) && (millis() - _lastReadTs) < getConversionTime())
+    if (!isnan(_lastTemp) && millis() > _lastReadTs && (millis() - _lastReadTs) < 750)
         return _lastTemp;
     _lastReadTs = millis();
     _lastTemp = readTemperature();
@@ -250,6 +256,7 @@ double DS18B20::getTemperature(void)
 double DS18B20::readTemperature(void)
 {
     byte data[9];
+
     if (sendResetPulse())
     {
         //Serial.printf("Found Sensor \n");
